@@ -188,11 +188,11 @@ def test_dumps_allows_empty_v2_trailer() -> None:
 
 
 def test_dumps_loads_roundtrips_empty_trailer_as_empty_string() -> None:
-    # A blank trailer must not be confused with a trailer whose literal
-    # content is the record terminator "*" (see the adjacent terminator
-    # markers this produces with no content between them).
+    # dumps() always terminates the trailer record, even when empty -- this
+    # produces two adjacent "*" markers with nothing between them.
     header = SdfHeader(version=SdfVersion.V2_0, num_points=1, num_profiles=1, data_type=7)
     text = _ascii.dumps(header, np.zeros((1, 1)), trailer="")
+    assert text.endswith("*\r\n*\r\n")
     _header, _data, trailer = _ascii.loads(text)
     assert trailer == ""
 
@@ -216,7 +216,11 @@ def test_dumps_rejects_non_ascii_manufacturer_id() -> None:
 
 def test_loads_rejects_non_ascii_trailer() -> None:
     header = SdfHeader(num_points=1, num_profiles=1, data_type=7)
-    text = _ascii.dumps(header, np.zeros((1, 1))) + "Müller café\r\n*\r\n"  # non-compliant trailer
+    # dumps() itself always terminates the (here, empty) trailer; replace
+    # that terminator to simulate a non-compliant trailer added after the fact.
+    text = _ascii.dumps(header, np.zeros((1, 1)))
+    assert text.endswith("*\r\n")
+    text = text[: -len("*\r\n")] + "Müller café\r\n*\r\n"
 
     with pytest.raises(SdfFormatError, match="must be 7-bit ASCII"):
         _ascii.loads(text)

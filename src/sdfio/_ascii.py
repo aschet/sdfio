@@ -271,12 +271,12 @@ def dumps(header: SdfHeader, data: np.ndarray, trailer: str = "") -> str:
         lines.append(" ".join(_format_value(value, data_type) for value in row))
     lines.append("*")
 
-    # An empty trailer is omitted entirely, rather than emitting a second "*"
-    # terminator immediately after the data's, which loads() cannot tell
-    # apart from an actual trailer whose content happens to be empty.
+    # The trailer record is always terminated, even when empty -- loads()
+    # tells that apart from an actual trailer whose content happens to be
+    # empty by record position, not by counting "*" markers.
     if trailer:
         lines.append(trailer)
-        lines.append("*")
+    lines.append("*")
     return "\r\n".join(lines) + "\r\n"
 
 
