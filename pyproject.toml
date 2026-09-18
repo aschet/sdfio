@@ -1,0 +1,114 @@
+# SPDX-FileCopyrightText: 2026 Thomas Ascher <thomas.ascher@gmx.at>
+#
+# SPDX-License-Identifier: MIT
+
+[build-system]
+requires = ["hatchling>=1.24"]
+build-backend = "hatchling.build"
+
+[project]
+name = "sdfio"
+dynamic = ["version"]
+description = "Read and write ISO 25178-71 SDF surface data files"
+readme = "README.md"
+requires-python = ">=3.11"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "Thomas Ascher", email = "thomas.ascher@gmx.at" }]
+keywords = ["sdf", "iso-25178", "surface-texture", "metrology"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Topic :: Scientific/Engineering",
+    "Typing :: Typed",
+]
+dependencies = ["defusedxml>=0.7", "numpy>=1.24"]
+
+[project.urls]
+Homepage = "https://github.com/aschet/sdfio"
+Documentation = "https://aschet.github.io/sdfio/"
+Source = "https://github.com/aschet/sdfio"
+Issues = "https://github.com/aschet/sdfio/issues"
+Changelog = "https://github.com/aschet/sdfio/releases"
+
+[project.scripts]
+sdfio = "sdfio.cli:main"
+
+[dependency-groups]
+dev = [
+    "bandit[toml]>=1.7",
+    "build>=1.2",
+    "mypy>=1.10",
+    "pip-audit>=2.7",
+    "pre-commit>=3.7",
+    "pytest>=8.0",
+    "pytest-cov>=5.0",
+    "reuse>=5.0",
+    "ruff>=0.5",
+    "twine>=5.1",
+    "types-defusedxml>=0.7",
+    "vulture>=2.11",
+]
+docs = ["furo>=2024.8", "myst-parser>=4.0", "sphinx>=8.0"]
+
+[tool.hatch.version]
+path = "src/sdfio/__init__.py"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/sdfio"]
+
+[tool.hatch.build.targets.sdist]
+include = [
+    "/src",
+    "/tests",
+    "/docs",
+    "/README.md",
+    "/LICENSE",
+    "/LICENSES",
+    "/REUSE.toml",
+    "/.pre-commit-config.yaml",
+]
+
+[tool.pytest.ini_options]
+minversion = "8.0"
+addopts = "--doctest-modules --strict-markers --strict-config --import-mode=importlib"
+testpaths = ["tests", "src"]
+
+[tool.coverage.report]
+fail_under = 75
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "C4", "SIM", "RUF", "D", "NPY", "PT", "ERA", "S"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["D100", "D101", "D102", "D103", "S101"]
+
+[tool.ruff.format]
+exclude = ["*.md"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "pep257"
+
+[tool.mypy]
+files = ["src", "tests"]
+strict = true
+
+[tool.vulture]
+paths = ["src"]
+min_confidence = 80
+
+[tool.bandit]
+exclude_dirs = ["tests"]
