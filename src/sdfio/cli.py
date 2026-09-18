@@ -14,9 +14,29 @@ from . import __version__
 from .datatypes import DataType
 from .exceptions import SdfError, SdfFormatError
 from .file import FileFormat, read
-from .header import SUPPORTED_VERSIONS, SdfVersion, validate_trailer_xml
+from .header import SdfDialect, SdfVersion, validate_trailer_xml
 
 __all__ = ["main"]
+
+#: Every valid dialect/version combination, e.g. "ISO-2.0", "BCR-1.0" --
+#: mirrors the file magic's own <dialect>-<version> shape (minus the a/b
+#: prefix). BCR only ever had version 1.0, so it contributes just one.
+_TARGETS = [
+    f"{dialect}-{version}"
+    for dialect in SdfDialect
+    for version in SdfVersion
+    if not (dialect == SdfDialect.BCR and version != SdfVersion.V1_0)
+]
+
+
+def _parse_target(value: str) -> tuple[SdfDialect, SdfVersion]:
+    dialect_text, _, version_text = value.partition("-")
+    try:
+        return SdfDialect(dialect_text), SdfVersion(version_text)
+    except ValueError:
+        raise argparse.ArgumentTypeError(
+            f"invalid target {value!r}, expected one of {', '.join(_TARGETS)}"
+        ) from None
 
 
 def _build_parser() -> argparse.ArgumentParser:
@@ -44,9 +64,9 @@ def _build_parser() -> argparse.ArgumentParser:
     convert_parser.add_argument(
         "-n",
         "--number",
-        type=SdfVersion,
-        choices=SUPPORTED_VERSIONS,
-        help="convert to a different SDF version number",
+        type=_parse_target,
+        metavar="{" + ",".join(_TARGETS) + "}",
+        help="convert to a different SDF dialect and version, e.g. ISO-2.0 or BCR-1.0",
     )
     convert_parser.add_argument(
         "-t",
@@ -70,10 +90,11 @@ def _print_info(path: str) -> None:
     header = sdf.header
     fields = (
         ("Format", "binary" if header.binary else "ASCII"),
+        ("Dialect", header.dialect),
         ("Version", header.version),
         ("ManufacID", header.manufacturer_id),
-        ("CreateDate", header.create_date),
-        ("ModDate", header.mod_date),
+        ("CreateDate", header.create_date if header.create_date is not None else "(not recorded)"),
+        ("ModDate", header.mod_date if header.mod_date is not None else "(not recorded)"),
         ("NumPoints", header.num_points),
         ("NumProfiles", header.num_profiles),
         ("Xscale", f"{header.x_scale:g}"),
@@ -105,9 +126,11 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         if args.command == "convert":
             sdf = read(args.source)
-            target_version = args.number or sdf.header.version
+            target_dialect, target_version = args.number or (sdf.header.dialect, sdf.header.version)
             data_type = DataType[args.data_type.upper()] if args.data_type is not None else None
-            if target_version != sdf.header.version or data_type is not None:
+            if (target_dialect, target_version) != (sdf.header.dialect, sdf.header.version) or (
+                data_type is not None
+            ):
                 trailer = None
                 if args.drop_trailer:
                     try:
@@ -116,7 +139,11 @@ def main(argv: Sequence[str] | None = None) -> int:
                         trailer = ""
                 # assume_utc: the operator explicitly requested this conversion.
                 sdf = sdf.with_version(
-                    target_version, data_type=data_type, assume_utc=True, trailer=trailer
+                    target_version,
+                    dialect=target_dialect,
+                    data_type=data_type,
+                    assume_utc=True,
+                    trailer=trailer,
                 )
             file_format = FileFormat[args.format.upper()] if args.format is not None else None
             sdf.save(args.destination, format=file_format)

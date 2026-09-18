@@ -63,12 +63,16 @@ def test_write_read_roundtrip(file_format: FileFormat, version: SdfVersion) -> N
     np.testing.assert_allclose(sdf.data, data, rtol=1e-9, equal_nan=True)
     np.testing.assert_allclose(sdf.x_axis, np.arange(3) * 1e-6)
     np.testing.assert_allclose(sdf.y_axis, np.arange(2) * 2e-6)
+    create_date = sdf.header.create_date
+    mod_date = sdf.header.mod_date
+    assert create_date is not None
+    assert mod_date is not None
     if version == SdfVersion.V2_0:
-        assert sdf.header.create_date.tzinfo == UTC
-        assert sdf.header.mod_date.tzinfo == UTC
+        assert create_date.tzinfo == UTC
+        assert mod_date.tzinfo == UTC
     else:
-        assert sdf.header.create_date.tzinfo is None
-        assert sdf.header.mod_date.tzinfo is None
+        assert create_date.tzinfo is None
+        assert mod_date.tzinfo is None
 
 
 def test_write_defaults_to_binary_version_2_0() -> None:
@@ -269,15 +273,20 @@ def test_with_version_upgrades_1_0_to_2_0() -> None:
         ),
         data=np.array([[1.0]]),
     )
+    assert sdf.header.create_date is not None
     assert sdf.header.create_date.tzinfo is None
 
     upgraded = sdf.with_version(SdfVersion.V2_0, assume_utc=True)
 
     assert upgraded.header.version == SdfVersion.V2_0
-    assert upgraded.header.create_date.tzinfo == UTC
-    assert upgraded.header.mod_date.tzinfo == UTC
+    upgraded_create_date = upgraded.header.create_date
+    upgraded_mod_date = upgraded.header.mod_date
+    assert upgraded_create_date is not None
+    assert upgraded_mod_date is not None
+    assert upgraded_create_date.tzinfo == UTC
+    assert upgraded_mod_date.tzinfo == UTC
     # assume_utc only reattaches tzinfo; it must not shift the wall clock.
-    assert upgraded.header.create_date.replace(tzinfo=None) == sdf.header.create_date
+    assert upgraded_create_date.replace(tzinfo=None) == sdf.header.create_date
 
 
 def test_with_version_rejects_naive_dates_without_assume_utc() -> None:

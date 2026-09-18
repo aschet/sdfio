@@ -14,8 +14,10 @@ compact binary format. It is used as a software measurement standard
 instruments, and is also used more generally as a surface topography
 interchange format.
 
-Pre-standardization variants and vendor-specific extensions of the format
-are not supported.
+Supported variants: ISO-1.0, ISO-2.0, and BCR-1.0 (the
+pre-standardization proposal this format is based on), without
+compression or checksummed data areas. Other dialects and vendor-specific
+extensions are not supported.
 
 ## Installation
 
@@ -76,3 +78,5 @@ pip-audit
 
 - ISO 25178-71:2026, *Geometrical product specifications (GPS) — Surface
   texture: Areal — Part 71: SDF file format*
+- K. J. Stout et al., *The Development of Methods for the Characterisation of
+  Roughness in Three Dimensions*, EUR 15178 EN, EC Brussels, 1993

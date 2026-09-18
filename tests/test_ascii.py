@@ -11,7 +11,7 @@ import pytest
 
 from sdfio import _ascii
 from sdfio.exceptions import SdfFormatError
-from sdfio.header import SdfHeader, SdfVersion
+from sdfio.header import SdfDialect, SdfHeader, SdfVersion
 
 # Adapted from the standard's own worked example, using a small, fully
 # specified 2x3 grid (the original elides most values with "......").
@@ -72,6 +72,18 @@ def test_loads_rejoins_a_trailer_containing_an_embedded_terminator_line() -> Non
     )
     _header, _data, trailer = _ascii.loads(text)
     assert trailer == "<Note>part one</Note>*<Note>part two</Note>"
+
+
+def test_loads_treats_adjacent_terminators_as_empty_trailer() -> None:
+    # An empty trailer explicitly represented by a "*" immediately after the
+    # data section's own "*" (as opposed to omitting the trailer entirely,
+    # which dumps() itself does) -- observed in real NPL SoftGauges files.
+    text = ISO_ANNEX_A_EXAMPLE.replace(
+        "*\r\n<OperatorName> WG 16 </OperatorName>\r\n*\r\n",
+        "*\r\n*\r\n",
+    )
+    _header, _data, trailer = _ascii.loads(text)
+    assert trailer == ""
 
 
 def test_loads_rejects_binary_magic() -> None:
@@ -164,18 +176,6 @@ def test_dumps_rejects_sentinel_collision() -> None:
         _ascii.dumps(header, np.array([[-128.0]]))
 
 
-def test_dumps_rejects_compression() -> None:
-    header = SdfHeader(num_points=1, num_profiles=1, compression=1)
-    with pytest.raises(SdfFormatError, match="Compressed SDF data areas"):
-        _ascii.dumps(header, np.zeros((1, 1)))
-
-
-def test_dumps_rejects_check_type() -> None:
-    header = SdfHeader(num_points=1, num_profiles=1, check_type=1)
-    with pytest.raises(SdfFormatError, match="Checksummed SDF data areas"):
-        _ascii.dumps(header, np.zeros((1, 1)))
-
-
 def test_dumps_rejects_malformed_v2_trailer() -> None:
     header = SdfHeader(version=SdfVersion.V2_0, num_points=1, num_profiles=1, data_type=7)
     with pytest.raises(SdfFormatError, match="must be well-formed XML"):
@@ -260,3 +260,69 @@ def test_dumps_rejects_shape_mismatch() -> None:
     header = SdfHeader(num_points=2, num_profiles=2)
     with pytest.raises(SdfFormatError, match="does not match header shape"):
         _ascii.dumps(header, np.zeros((3, 3)))
+
+
+def test_dumps_loads_roundtrip_bcr_dialect() -> None:
+    header = SdfHeader(
+        version=SdfVersion.V1_0,
+        dialect=SdfDialect.BCR,
+        num_points=2,
+        num_profiles=1,
+        z_scale=1e-6,
+        data_type=3,
+    )
+    data = np.array([[1e-6, -2e-6]])
+    text = _ascii.dumps(header, data)
+    assert text.startswith("aBCR-1.0")
+
+    round_tripped_header, round_tripped_data, _trailer = _ascii.loads(text)
+    assert round_tripped_header.dialect == SdfDialect.BCR
+    np.testing.assert_allclose(round_tripped_data, data, rtol=1e-6)
+
+
+def test_dumps_loads_roundtrip_none_dates() -> None:
+    header = SdfHeader(num_points=1, num_profiles=1, data_type=7, create_date=None, mod_date=None)
+    text = _ascii.dumps(header, np.zeros((1, 1)))
+    assert "CreateDate = 000000000000" in text
+
+    round_tripped_header, _data, _trailer = _ascii.loads(text)
+    assert round_tripped_header.create_date is None
+    assert round_tripped_header.mod_date is None
+
+
+def test_loads_rejects_unknown_dialect() -> None:
+    bad = ISO_ANNEX_A_EXAMPLE.replace("aISO-2.0", "aXYZ-2.0")
+    with pytest.raises(SdfFormatError, match="Unknown SDF dialect"):
+        _ascii.loads(bad)
+
+
+def test_loads_rejects_bcr_version_2_0() -> None:
+    bad = ISO_ANNEX_A_EXAMPLE.replace("aISO-2.0", "aBCR-2.0")
+    with pytest.raises(SdfFormatError, match="does not support version"):
+        _ascii.loads(bad)
+
+
+def test_loads_rejects_bcr_checksum_too() -> None:
+    # BCR's IntegerTrace checksum (CheckType=1) is a value inline in the
+    # data area, not a header value.
+    text = (
+        "aBCR-1.0\r\n"
+        "ManufacID = sdfio\r\n"
+        "CreateDate = 010120240000\r\n"
+        "ModDate = 010120240000\r\n"
+        "NumPoints = 2\r\n"
+        "NumProfiles = 2\r\n"
+        "Xscale = 1.0e-6\r\n"
+        "Yscale = 1.0e-6\r\n"
+        "Zscale = 1.0e-6\r\n"
+        "Zresolution = -1\r\n"
+        "Compression = 0\r\n"
+        "DataType = 7\r\n"
+        "CheckType = 1\r\n"
+        "*\r\n"
+        "1 2 123\r\n"
+        "3 4 456\r\n"
+        "*\r\n"
+    )
+    with pytest.raises(SdfFormatError, match="Checksummed SDF data areas"):
+        _ascii.loads(text)

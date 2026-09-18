@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta, timezone
 import pytest
 
 from sdfio.exceptions import SdfFormatError, SdfVersionError
-from sdfio.header import SdfHeader, SdfVersion, format_sdf_datetime, parse_sdf_datetime
+from sdfio.header import SdfDialect, SdfHeader, SdfVersion, format_sdf_datetime, parse_sdf_datetime
 
 
 def test_datetime_roundtrip() -> None:
@@ -21,12 +21,15 @@ def test_datetime_roundtrip() -> None:
 
 def test_datetime_tagged_as_utc_for_version_2_0() -> None:
     parsed = parse_sdf_datetime("030920241816", SdfVersion.V2_0)
+    assert parsed is not None
     assert parsed.tzinfo == UTC
     assert parsed == datetime(2024, 9, 3, 18, 16, tzinfo=UTC)
 
 
 def test_datetime_left_naive_for_version_1_0() -> None:
-    assert parse_sdf_datetime("030920241816", SdfVersion.V1_0).tzinfo is None
+    parsed = parse_sdf_datetime("030920241816", SdfVersion.V1_0)
+    assert parsed is not None
+    assert parsed.tzinfo is None
 
 
 def test_header_rejects_unsupported_version() -> None:
@@ -37,6 +40,16 @@ def test_header_rejects_unsupported_version() -> None:
 def test_header_magic() -> None:
     assert SdfHeader(version=SdfVersion.V2_0, binary=True).magic == "bISO-2.0"
     assert SdfHeader(version=SdfVersion.V1_0, binary=False).magic == "aISO-1.0"
+
+
+def test_header_magic_bcr() -> None:
+    header = SdfHeader(version=SdfVersion.V1_0, dialect=SdfDialect.BCR, binary=True)
+    assert header.magic == "bBCR-1.0"
+
+
+def test_header_rejects_bcr_with_version_2_0() -> None:
+    with pytest.raises(SdfFormatError, match="does not support version"):
+        SdfHeader(version=SdfVersion.V2_0, dialect=SdfDialect.BCR)
 
 
 def test_header_shape() -> None:
@@ -65,3 +78,19 @@ def test_header_allows_naive_datetime_for_version_1_0() -> None:
     SdfHeader(
         version=SdfVersion.V1_0, create_date=datetime(2024, 9, 3), mod_date=datetime(2024, 9, 3)
     )
+
+
+def test_datetime_all_zero_placeholder_parses_as_none() -> None:
+    # Undocumented in either spec, but observed in real files (e.g. from a
+    # MATLAB-based exporter) as a "date not recorded" placeholder.
+    assert parse_sdf_datetime("000000000000") is None
+
+
+def test_datetime_none_formats_as_all_zero_placeholder() -> None:
+    assert format_sdf_datetime(None) == "000000000000"
+
+
+def test_header_allows_none_datetime_for_version_2_0() -> None:
+    # A None date has no timezone to validate, so it bypasses the UTC check
+    # rather than being rejected.
+    SdfHeader(version=SdfVersion.V2_0, create_date=None, mod_date=None)

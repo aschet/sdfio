@@ -22,7 +22,15 @@ from defusedxml.ElementTree import fromstring
 from . import _ascii, _binary
 from .datatypes import DataType, encode_raw, get_data_type, suggest_z_scale
 from .exceptions import SdfFormatError
-from .header import SdfHeader, SdfMetadata, SdfVersion, validate_trailer_xml
+from .header import (
+    ASCII_PREFIX,
+    BINARY_PREFIX,
+    SdfDialect,
+    SdfHeader,
+    SdfMetadata,
+    SdfVersion,
+    validate_trailer_xml,
+)
 
 __all__ = ["FileFormat", "SdfFile", "read", "write"]
 
@@ -107,19 +115,21 @@ class SdfFile:
         self,
         version: SdfVersion,
         *,
+        dialect: SdfDialect | None = None,
         data_type: DataType | int | None = None,
         assume_utc: bool = False,
         trailer: str | bytes | None = None,
     ) -> SdfFile:
-        """Return a copy of this file retargeted to a different SDF version.
+        """Return a copy of this file retargeted to a different SDF version/dialect.
 
         Converting between versions can fail for three reasons, each
         resolved by an explicit, opt-in parameter rather than silently
         guessing:
 
-        - ``data_type``: some data types are version-restricted
-          (``binary32``/``int8`` are version 2.0 only). Pass a compatible
-          replacement if the current type isn't valid for ``version``.
+        - ``data_type``: some data types are version-restricted under ISO
+          (``binary32``/``int8`` are version 2.0 only; BCR has no such
+          restriction). Pass a compatible replacement if the current type
+          isn't valid for ``version``/``dialect``.
         - Timestamps: version 2.0 requires ``create_date``/``mod_date`` to
           be timezone-aware UTC datetimes. If this file's dates are naive
           (e.g. read from a version 1.0 file) and ``version`` is
@@ -131,10 +141,18 @@ class SdfFile:
           trailer wouldn't be valid for ``version``, pass a replacement
           (e.g. ``""`` to drop it).
 
+        :param dialect: Defaults to this file's current dialect. Passed
+            together with ``version`` (rather than changed separately
+            afterwards) so the *resulting* combination is what gets
+            validated -- e.g. converting a BCR (version 1.0 only) file to
+            ISO version 2.0 in one call is valid even though BCR itself
+            never supports version 2.0.
         :raises SdfFormatError: If ``data_type`` isn't valid for
-            ``version``, the trailer isn't valid for ``version``, or (for
-            ``version=SdfVersion.V2_0``) the timestamps aren't UTC-aware and
-            ``assume_utc`` wasn't set.
+            ``version``/``dialect``, the trailer isn't valid for
+            ``version``, (for ``version=SdfVersion.V2_0``) the timestamps
+            aren't UTC-aware and ``assume_utc`` wasn't set, or ``dialect``
+            is :attr:`SdfDialect.BCR` and ``version`` isn't
+            :attr:`SdfVersion.V1_0` (BCR never had another version).
 
         Converting to a different version::
 
@@ -156,10 +174,11 @@ class SdfFile:
             >>> retyped.data_type.name
             'INT16'
         """
+        resolved_dialect = self.header.dialect if dialect is None else dialect
         resolved_data_type = get_data_type(
             self.header.data_type if data_type is None else data_type
         )
-        if not resolved_data_type.is_supported(version):
+        if not resolved_data_type.is_supported(version, resolved_dialect):
             raise SdfFormatError(
                 f"Data type {resolved_data_type.type.name} is not valid for SDF version "
                 f"{version}; pass a compatible data_type"
@@ -168,9 +187,11 @@ class SdfFile:
         create_date = self.header.create_date
         mod_date = self.header.mod_date
         if version == SdfVersion.V2_0 and assume_utc:
-            if create_date.tzinfo is None:
+            # A None date ("not recorded") stays None -- there's no
+            # wall-clock value to reinterpret as UTC.
+            if create_date is not None and create_date.tzinfo is None:
                 create_date = create_date.replace(tzinfo=UTC)
-            if mod_date.tzinfo is None:
+            if mod_date is not None and mod_date.tzinfo is None:
                 mod_date = mod_date.replace(tzinfo=UTC)
 
         new_trailer = self.trailer if trailer is None else trailer
@@ -179,6 +200,7 @@ class SdfFile:
         new_header = replace(
             self.header,
             version=version,
+            dialect=resolved_dialect,
             data_type=resolved_data_type.type,
             create_date=create_date,
             mod_date=mod_date,
@@ -199,7 +221,7 @@ class SdfFile:
             ``header.data_type``, or collides with its invalid-point sentinel.
         """
         data_type = get_data_type(self.header.data_type)
-        return encode_raw(self.data, data_type, self.header.z_scale)
+        return encode_raw(self.data, data_type, self.header.z_scale, self.header.dialect)
 
     @property
     def trailer_xml(self) -> ET.Element:
@@ -241,11 +263,13 @@ class SdfFile:
         :raises SdfFormatError: If ``data`` does not start with a recognized
             SDF magic, or its contents are otherwise malformed.
         """
-        if len(data) < 8 or data[:1] not in (b"a", b"b"):
+        ascii_prefix = ASCII_PREFIX.encode("ascii")
+        binary_prefix = BINARY_PREFIX.encode("ascii")
+        if len(data) < 8 or data[:1] not in (ascii_prefix, binary_prefix):
             raise SdfFormatError("Not an SDF file, unexpected magic")
 
         trailer: str | bytes
-        if data[:1] == b"b":
+        if data[:1] == binary_prefix:
             header, values, trailer = _binary.loads(data)
         else:
             header, values, trailer = _ascii.loads(data.decode("ascii", errors="replace"))
@@ -356,23 +380,25 @@ def write(
         fits ``data`` into ``metadata.data_type`` without overflow (see
         :func:`sdfio.datatypes.suggest_z_scale`).
     :param format: :attr:`FileFormat.ASCII` or :attr:`FileFormat.BINARY`.
-    :param metadata: Reusable header template (``version``,
+    :param metadata: Reusable header template (``version``, ``dialect``,
         ``manufacturer_id``, ``create_date``, ``mod_date``, ``z_resolution``,
         ``data_type``); defaults to :class:`SdfMetadata`'s own defaults (SDF
-        version 2.0, ``binary64``, current UTC timestamps). Every field on it
-        is used as given -- there is no overlap with ``x_scale``/``y_scale``/
-        ``z_scale``/``format`` above, or with ``num_points``/``num_profiles``,
-        which are always taken from ``data``'s shape. Pass a shared template
-        to write several files with the same metadata, e.g.
-        ``metadata=SdfMetadata(manufacturer_id="acme")``.
+        version 2.0, ISO dialect, ``binary64``, current UTC timestamps). Every
+        field on it is used as given -- there is no overlap with
+        ``x_scale``/``y_scale``/``z_scale``/``format`` above, or with
+        ``num_points``/``num_profiles``, which are always taken from
+        ``data``'s shape. Pass a shared template to write several files with
+        the same metadata, e.g. ``metadata=SdfMetadata(manufacturer_id="acme")``.
         ``manufacturer_id`` must be 7-bit ASCII; values longer than 10 bytes
         are silently truncated.
     :param trailer: Optional record 3 trailer content; must be 7-bit ASCII.
     :raises SdfFormatError: If ``data`` is not 2-D, ``z_scale`` is not
         positive, ``metadata.manufacturer_id`` isn't 7-bit ASCII,
         ``metadata.data_type`` is invalid or unsupported for
-        ``metadata.version``, ``metadata``'s timestamps aren't UTC-aware for
-        SDF version 2.0, ``trailer`` isn't 7-bit ASCII, a non-empty
+        ``metadata.version``/``metadata.dialect``, ``metadata.dialect`` is
+        :attr:`SdfDialect.BCR` and ``metadata.version`` isn't
+        :attr:`SdfVersion.V1_0`, ``metadata``'s timestamps aren't UTC-aware
+        for SDF version 2.0, ``trailer`` isn't 7-bit ASCII, a non-empty
         ``trailer`` isn't well-formed XML for version 2.0, or ``data`` does
         not fit ``metadata.data_type`` without overflow.
 
@@ -392,11 +418,14 @@ def write(
         raise SdfFormatError("SDF data must be a 2-D (num_profiles, num_points) array")
     meta = metadata if metadata is not None else SdfMetadata()
     resolved_data_type = get_data_type(meta.data_type)
-    resolved_z_scale = suggest_z_scale(array, resolved_data_type) if z_scale == "auto" else z_scale
+    resolved_z_scale = (
+        suggest_z_scale(array, resolved_data_type, meta.dialect) if z_scale == "auto" else z_scale
+    )
     # Version 2.0 timestamps are UTC.
     now = datetime.now(UTC)
     header = SdfHeader(
         version=meta.version,
+        dialect=meta.dialect,
         binary=format == FileFormat.BINARY,
         manufacturer_id=meta.manufacturer_id,
         create_date=meta.create_date or now,
@@ -407,8 +436,6 @@ def write(
         y_scale=y_scale,
         z_scale=resolved_z_scale,
         z_resolution=meta.z_resolution,
-        compression=0,
         data_type=resolved_data_type.type,
-        check_type=0,
     )
     SdfFile(header=header, data=array, trailer=trailer).save(path, format=format)

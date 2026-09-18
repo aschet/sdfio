@@ -16,25 +16,52 @@ from ._numeric import format_scientific
 from .datatypes import DataType, SdfDataType, require_supported_data_type, validate_data_range
 from .exceptions import SdfFormatError
 from .header import (
+    ASCII_PREFIX,
+    BINARY_PREFIX,
+    SdfDialect,
     SdfHeader,
     SdfVersion,
     format_sdf_datetime,
     parse_sdf_datetime,
+    validate_check_type,
+    validate_compression,
     validate_manufacturer_id_ascii,
     validate_trailer_ascii,
     validate_trailer_xml,
-    validate_uncompressed,
     validate_z_scale,
 )
 
 __all__ = ["dump", "dumps", "load", "loads"]
 
-_MAGIC_RE = re.compile(r"^[ab]ISO-(?P<version>\d\.\d)$")
+_MAGIC_RE = re.compile(
+    rf"^(?P<prefix>[{ASCII_PREFIX}{BINARY_PREFIX}])(?P<dialect>[A-Z]{{3}})-(?P<version>\d\.\d)$"
+)
 _FIELD_RE = re.compile(r"^(?P<name>\w+)\s*=\s*(?P<value>.*)$")
 _INVALID_MARKER = "BAD"
 # The standard mandates <CRLF> line endings; dumps() always writes them.
 # \r? here is a read-side leniency to also accept bare LF.
-_RECORD_SPLIT_RE = re.compile(r"[ \t]*\r?\n[ \t]*\*[ \t]*(?:\r?\n|$)")
+_LINE_SPLIT_RE = re.compile(r"\r?\n")
+_TERMINATOR_RE = re.compile(r"^[ \t]*\*[ \t]*$")
+
+
+def _split_records(remainder: str) -> list[str]:
+    # Splitting by matching the "*" delimiter together with its surrounding
+    # newlines (as one combined pattern) can't tell two delimiters directly
+    # adjacent to each other (an explicit empty record, e.g. an empty
+    # trailer written as "*<CRLF>*<CRLF>") apart from a single delimiter --
+    # the newline between them would need to be consumed by both matches at
+    # once. Splitting into lines first and testing each one for being a bare
+    # "*" avoids that ambiguity.
+    records = []
+    current: list[str] = []
+    for line in _LINE_SPLIT_RE.split(remainder):
+        if _TERMINATOR_RE.match(line):
+            records.append("\n".join(current))
+            current = []
+        else:
+            current.append(line)
+    records.append("\n".join(current))
+    return records
 
 
 def _read_fields(header_text: str) -> dict[str, str]:
@@ -98,15 +125,22 @@ def loads(text: str) -> tuple[SdfHeader, np.ndarray, str]:
     magic_match = _MAGIC_RE.match(magic_line)
     if not magic_match:
         raise SdfFormatError(f"Not an ASCII SDF file, unexpected magic: {magic_line!r}")
-    if magic_line[0] != "a":
+    if magic_match.group("prefix") != ASCII_PREFIX:
         raise SdfFormatError("Binary magic found while parsing an ASCII SDF file")
+    dialect_text = magic_match.group("dialect")
+    try:
+        dialect = SdfDialect(dialect_text)
+    except ValueError:
+        raise SdfFormatError(
+            f"Unknown SDF dialect {dialect_text!r} in magic {magic_line!r}"
+        ) from None
     version_text = magic_match.group("version")
     try:
         version = SdfVersion(version_text)
     except ValueError:
         raise SdfFormatError(f"Unsupported SDF version {version_text!r}") from None
 
-    records = _RECORD_SPLIT_RE.split(remainder)
+    records = _split_records(remainder)
     if len(records) < 3:
         raise SdfFormatError("SDF file must contain header, data and trailer records")
     # The trailer is itself terminated by its own "*" record; drop
@@ -118,10 +152,13 @@ def loads(text: str) -> tuple[SdfHeader, np.ndarray, str]:
 
     fields = _read_fields(header_text)
     data_type_code = _parse_int(fields, "DataType")
-    data_type = require_supported_data_type(data_type_code, version)
+    data_type = require_supported_data_type(data_type_code, version, dialect)
+    validate_compression(_parse_int(fields, "Compression"))
+    validate_check_type(_parse_int(fields, "CheckType"))
 
     header = SdfHeader(
         version=version,
+        dialect=dialect,
         binary=False,
         manufacturer_id=_field(fields, "ManufacID").strip(),
         create_date=parse_sdf_datetime(_field(fields, "CreateDate"), version),
@@ -132,11 +169,8 @@ def loads(text: str) -> tuple[SdfHeader, np.ndarray, str]:
         y_scale=_parse_float(fields, "Yscale"),
         z_scale=_parse_float(fields, "Zscale"),
         z_resolution=_parse_float(fields, "Zresolution"),
-        compression=_parse_int(fields, "Compression"),
         data_type=data_type_code,
-        check_type=_parse_int(fields, "CheckType"),
     )
-    validate_uncompressed(header.compression, header.check_type)
 
     data = _parse_data(data_text, header, data_type)
     trailer = trailer_text.strip()
@@ -151,7 +185,7 @@ def _parse_data(data_text: str, header: SdfHeader, data_type: SdfDataType) -> np
         raise SdfFormatError(f"Expected {expected} data values, found {len(tokens)}")
 
     is_float = data_type.type in (DataType.BINARY32, DataType.BINARY64)
-    values = np.empty(expected, dtype=np.float64)
+    values = np.empty(header.num_points * header.num_profiles, dtype=np.float64)
     for index, token in enumerate(tokens):
         # The standard only specifies the literal "BAD"; matching
         # case-insensitively is a deliberate leniency, not mandated.
@@ -208,12 +242,11 @@ def dumps(header: SdfHeader, data: np.ndarray, trailer: str = "") -> str:
         raise SdfFormatError(f"Data shape {data.shape} does not match header shape {header.shape}")
     validate_z_scale(header.z_scale)
     validate_manufacturer_id_ascii(header.manufacturer_id)
-    validate_uncompressed(header.compression, header.check_type)
     validate_trailer_ascii(trailer)
     validate_trailer_xml(header.version, trailer)
-    data_type = require_supported_data_type(header.data_type, header.version)
+    data_type = require_supported_data_type(header.data_type, header.version, header.dialect)
 
-    lines = [f"aISO-{header.version}"]
+    lines = [f"{ASCII_PREFIX}{header.dialect}-{header.version}"]
     fields = (
         ("ManufacID", header.manufacturer_id),
         ("CreateDate", format_sdf_datetime(header.create_date)),
@@ -224,16 +257,16 @@ def dumps(header: SdfHeader, data: np.ndarray, trailer: str = "") -> str:
         ("Yscale", format_scientific(header.y_scale, 14, 3)),
         ("Zscale", format_scientific(header.z_scale, 14, 3)),
         ("Zresolution", format_scientific(header.z_resolution, 14, 3)),
-        ("Compression", str(header.compression)),
+        ("Compression", "0"),  # Never supported, see SdfHeader's docstring.
         ("DataType", str(header.data_type)),
-        ("CheckType", str(header.check_type)),
+        ("CheckType", "0"),  # Never written, see SdfHeader's docstring.
     )
     for name, value in fields:
         lines.append(f"{name} = {value}")
     lines.append("*")
 
     raw = data / header.z_scale
-    validate_data_range(raw, np.isnan(data), data_type)
+    validate_data_range(raw, np.isnan(data), data_type, header.dialect)
     for row in raw:
         lines.append(" ".join(_format_value(value, data_type) for value in row))
     lines.append("*")

@@ -38,7 +38,7 @@ from .datatypes import (
 )
 from .exceptions import SdfError, SdfFormatError, SdfVersionError
 from .file import FileFormat, SdfFile, read, write
-from .header import SUPPORTED_VERSIONS, SdfHeader, SdfMetadata, SdfVersion
+from .header import SUPPORTED_VERSIONS, SdfDialect, SdfHeader, SdfMetadata, SdfVersion
 
 __all__ = [
     "DATA_TYPES",
@@ -46,6 +46,7 @@ __all__ = [
     "DataType",
     "FileFormat",
     "SdfDataType",
+    "SdfDialect",
     "SdfError",
     "SdfFile",
     "SdfFormatError",

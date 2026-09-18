@@ -13,7 +13,7 @@ import pytest
 
 from sdfio import _binary
 from sdfio.exceptions import SdfFormatError
-from sdfio.header import SdfHeader, SdfVersion
+from sdfio.header import SdfDialect, SdfHeader, SdfVersion
 
 
 def _make_header(**overrides: Any) -> SdfHeader:
@@ -99,7 +99,7 @@ def test_load_rejects_unsupported_version() -> None:
 
 
 def test_load_rejects_compressed_data() -> None:
-    header = _make_header(compression=0)
+    header = _make_header()
     buffer = io.BytesIO()
     _binary.dump(header, np.zeros((2, 3)), buffer)
     corrupted = bytearray(buffer.getvalue())
@@ -110,7 +110,7 @@ def test_load_rejects_compressed_data() -> None:
 
 
 def test_load_rejects_checksummed_data() -> None:
-    header = _make_header(check_type=0)
+    header = _make_header()
     buffer = io.BytesIO()
     _binary.dump(header, np.zeros((2, 3)), buffer)
     corrupted = bytearray(buffer.getvalue())
@@ -163,18 +163,6 @@ def test_dump_rejects_unsupported_version() -> None:
     # Bypass SdfHeader.__post_init__ validation to test dump()'s own check.
     header.version = "3.0"  # type: ignore[assignment]
     with pytest.raises(SdfFormatError, match="Unsupported SDF version"):
-        _binary.dump(header, np.zeros((1, 1)), io.BytesIO())
-
-
-def test_dump_rejects_compression() -> None:
-    header = _make_header(num_points=1, num_profiles=1, compression=1)
-    with pytest.raises(SdfFormatError, match="Compressed SDF data areas"):
-        _binary.dump(header, np.zeros((1, 1)), io.BytesIO())
-
-
-def test_dump_rejects_check_type() -> None:
-    header = _make_header(num_points=1, num_profiles=1, check_type=1)
-    with pytest.raises(SdfFormatError, match="Checksummed SDF data areas"):
         _binary.dump(header, np.zeros((1, 1)), io.BytesIO())
 
 
@@ -235,3 +223,79 @@ def test_dumps_loads_roundtrip() -> None:
     assert round_tripped_header.num_points == 2
     assert trailer == b"<a/>"
     np.testing.assert_allclose(round_tripped_data, data, equal_nan=True)
+
+
+def test_roundtrip_bcr_dialect() -> None:
+    header = _make_header(
+        version=SdfVersion.V1_0, dialect=SdfDialect.BCR, data_type=3, num_points=2, num_profiles=1
+    )
+    data = np.array([[1e-6, -2e-6]])
+    buffer = io.BytesIO()
+    _binary.dump(header, data, buffer)
+    buffer.seek(0)
+    read_header, read_data, _trailer = _binary.load(buffer)
+
+    assert read_header.dialect == SdfDialect.BCR
+    assert read_header.magic == "bBCR-1.0"
+    np.testing.assert_allclose(read_data, data, rtol=1e-6, atol=1e-9)
+
+
+def test_roundtrip_none_dates() -> None:
+    header = _make_header(num_points=1, num_profiles=1, create_date=None, mod_date=None)
+    buffer = io.BytesIO()
+    _binary.dump(header, np.zeros((1, 1)), buffer)
+    buffer.seek(0)
+    read_header, _data, _trailer = _binary.load(buffer)
+    assert read_header.create_date is None
+    assert read_header.mod_date is None
+
+
+def test_load_rejects_unknown_dialect() -> None:
+    with pytest.raises(SdfFormatError, match="Unknown SDF dialect"):
+        _binary.load(io.BytesIO(b"bXYZ-1.0" + b" " * 80))
+
+
+def test_load_rejects_bcr_version_2_0() -> None:
+    # An otherwise well-formed header (BCR never had version 2.0, so this is
+    # the only thing that should be rejected here).
+    payload = struct.pack(
+        "<8s10s12s12sIIddddBBB",
+        b"bBCR-2.0",
+        b"sdfio     ",
+        b"010120240000",
+        b"010120240000",
+        1,
+        1,
+        1e-6,
+        1e-6,
+        1e-6,
+        -1.0,
+        0,
+        7,  # binary64
+        0,
+    )
+    with pytest.raises(SdfFormatError, match="does not support version"):
+        _binary.load(io.BytesIO(payload))
+
+
+def test_load_rejects_bcr_checksum_too() -> None:
+    # BCR's IntegerTrace checksum (check_type=1) is a value inline in the
+    # data area, not a header value.
+    header_bytes = struct.pack(
+        "<8s10s12s12sHHddddBBB",
+        b"bBCR-1.0",
+        b"sdfio     ",
+        b"010120240000",
+        b"010120240000",
+        2,
+        2,
+        1e-6,
+        1e-6,
+        1e-6,
+        -1.0,
+        0,
+        7,  # binary64
+        1,  # check_type: IntegerTrace
+    )
+    with pytest.raises(SdfFormatError, match="Checksummed SDF data areas"):
+        _binary.load(io.BytesIO(header_bytes))

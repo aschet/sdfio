@@ -12,7 +12,7 @@ from typing import Final
 import numpy as np
 
 from .exceptions import SdfFormatError
-from .header import DataType, SdfVersion
+from .header import DataType, SdfDialect, SdfVersion
 
 # DataType lives in .header (see its docstring for why); re-exported here
 # since callers reasonably expect it alongside the rest of the data-type API.
@@ -35,43 +35,53 @@ class SdfDataType:
 
     :param type: ``DataType`` header field value.
     :param dtype: Little-endian NumPy dtype used to store the raw values.
-    :param invalid_value: Sentinel raw value marking a non-measured or
-        spurious point.
-    :param versions: SDF versions for which this data type is valid.
+    :param versions: SDF versions for which this data type is valid under
+        :attr:`~sdfio.SdfDialect.ISO`. BCR imposes no such restriction (it
+        never had more than one version), see :meth:`is_supported`.
     """
 
     type: DataType
     dtype: np.dtype
-    invalid_value: float
     versions: frozenset[SdfVersion]
 
-    def is_supported(self, version: SdfVersion) -> bool:
-        """Return whether this data type is valid for the given SDF version."""
-        return version in self.versions
+    def is_supported(self, version: SdfVersion, dialect: SdfDialect) -> bool:
+        """Return whether this data type is valid for the given SDF version/dialect.
+
+        The version restriction (e.g. binary32/int8 being version-2.0-only)
+        comes from the ISO standard's own data type table; the 1993 BCR
+        proposal this format descends from never had more than one version
+        and lists all its codes without any such split.
+        """
+        return dialect == SdfDialect.BCR or version in self.versions
+
+    def invalid_value(self, dialect: SdfDialect) -> float:
+        """Sentinel raw value marking a non-measured/spurious point, for ``dialect``.
+
+        ISO reserves each type's minimum representable value; BCR (the
+        pre-standard proposal this format descends from) used the maximum
+        instead, since it still had unsigned integer types whose minimum
+        (0) is a valid low bound rather than an obviously-invalid one.
+        """
+        bounds = (
+            np.iinfo(self.dtype) if np.issubdtype(self.dtype, np.integer) else np.finfo(self.dtype)
+        )
+        return float(bounds.max if dialect == SdfDialect.BCR else bounds.min)
 
 
 #: All supported SDF data types, keyed by their ``DataType`` code.
 DATA_TYPES: Final[dict[DataType, SdfDataType]] = {
     DataType.BINARY32: SdfDataType(
-        DataType.BINARY32, np.dtype("<f4"), -3.402823466e38, frozenset({SdfVersion.V2_0})
+        DataType.BINARY32, np.dtype("<f4"), frozenset({SdfVersion.V2_0})
     ),
-    DataType.INT8: SdfDataType(
-        DataType.INT8, np.dtype("<i1"), -128.0, frozenset({SdfVersion.V2_0})
-    ),
+    DataType.INT8: SdfDataType(DataType.INT8, np.dtype("<i1"), frozenset({SdfVersion.V2_0})),
     DataType.INT16: SdfDataType(
-        DataType.INT16, np.dtype("<i2"), -32768.0, frozenset({SdfVersion.V1_0, SdfVersion.V2_0})
+        DataType.INT16, np.dtype("<i2"), frozenset({SdfVersion.V1_0, SdfVersion.V2_0})
     ),
     DataType.INT32: SdfDataType(
-        DataType.INT32,
-        np.dtype("<i4"),
-        -2147483648.0,
-        frozenset({SdfVersion.V1_0, SdfVersion.V2_0}),
+        DataType.INT32, np.dtype("<i4"), frozenset({SdfVersion.V1_0, SdfVersion.V2_0})
     ),
     DataType.BINARY64: SdfDataType(
-        DataType.BINARY64,
-        np.dtype("<f8"),
-        -1.7976931348623158e308,
-        frozenset({SdfVersion.V1_0, SdfVersion.V2_0}),
+        DataType.BINARY64, np.dtype("<f8"), frozenset({SdfVersion.V1_0, SdfVersion.V2_0})
     ),
 }
 
@@ -88,23 +98,31 @@ def get_data_type(identifier: int) -> SdfDataType:
         raise SdfFormatError(f"Unknown SDF data type code {identifier!r}") from None
 
 
-def require_supported_data_type(identifier: int, version: SdfVersion) -> SdfDataType:
-    """Look up a data type by code and ensure it is valid for ``version``.
+def require_supported_data_type(
+    identifier: int, version: SdfVersion, dialect: SdfDialect
+) -> SdfDataType:
+    """Look up a data type by code and ensure it is valid for ``version``/``dialect``.
 
     :param identifier: ``DataType`` header field value (see :class:`DataType`).
     :param version: SDF format version the data type must be valid for.
+    :param dialect: SDF dialect the data type must be valid for.
     :raises SdfFormatError: If no matching data type is known, or it is not
-        valid for ``version``.
+        valid for ``version``/``dialect``.
     """
     data_type = get_data_type(identifier)
-    if not data_type.is_supported(version):
+    if not data_type.is_supported(version, dialect):
         raise SdfFormatError(
             f"Data type {data_type.type.name} is not valid for SDF version {version}"
         )
     return data_type
 
 
-def validate_data_range(raw: np.ndarray, invalid_mask: np.ndarray, data_type: SdfDataType) -> None:
+def validate_data_range(
+    raw: np.ndarray,
+    invalid_mask: np.ndarray,
+    data_type: SdfDataType,
+    dialect: SdfDialect = SdfDialect.ISO,
+) -> None:
     """Reject values that would silently overflow or corrupt on encoding.
 
     :param raw: Coded height values (``data / z_scale``), same shape as
@@ -112,6 +130,7 @@ def validate_data_range(raw: np.ndarray, invalid_mask: np.ndarray, data_type: Sd
     :param invalid_mask: ``True`` where the corresponding point is
         non-measured/spurious (``NaN`` in the physical data).
     :param data_type: Target SDF data area storage type.
+    :param dialect: SDF dialect, see :meth:`SdfDataType.invalid_value`.
     :raises SdfFormatError: If a valid value is out of range for
         ``data_type``, or exactly equals its invalid-point sentinel, which
         would make it unrepresentable or misread as
@@ -134,20 +153,24 @@ def validate_data_range(raw: np.ndarray, invalid_mask: np.ndarray, data_type: Sd
     elif valid.min() < np.finfo(data_type.dtype).min or valid.max() > np.finfo(data_type.dtype).max:
         raise SdfFormatError(f"Data value out of range for SDF data type {data_type.type.name}")
 
-    if np.any(valid == data_type.invalid_value):
+    invalid_value = data_type.invalid_value(dialect)
+    if np.any(valid == invalid_value):
         raise SdfFormatError(
             f"A data value equals the {data_type.type.name} invalid-point sentinel "
-            f"({data_type.invalid_value!r}); rescale the data to avoid this value"
+            f"({invalid_value!r}); rescale the data to avoid this value"
         )
 
 
-def encode_raw(data: np.ndarray, data_type: SdfDataType, z_scale: float) -> np.ndarray:
+def encode_raw(
+    data: np.ndarray, data_type: SdfDataType, z_scale: float, dialect: SdfDialect = SdfDialect.ISO
+) -> np.ndarray:
     """Convert physical height values (metres) to the raw on-disk coded values.
 
     :param data: Height values in metres; ``NaN`` marks non-measured or
         spurious points.
     :param data_type: Target SDF data area storage type.
     :param z_scale: Scale factor; ``raw = data / z_scale``.
+    :param dialect: SDF dialect, see :meth:`SdfDataType.invalid_value`.
     :returns: Array of dtype ``data_type.dtype``, with non-measured or
         spurious points set to the type's sentinel.
     :raises SdfFormatError: See :func:`validate_data_range`.
@@ -158,31 +181,36 @@ def encode_raw(data: np.ndarray, data_type: SdfDataType, z_scale: float) -> np.n
     # reach np.rint()/astype(), whose behaviour on NaN is undefined for
     # integer dtypes.
     scaled = np.where(invalid_mask, 0.0, data / z_scale)
-    validate_data_range(scaled, invalid_mask, data_type)
+    validate_data_range(scaled, invalid_mask, data_type, dialect)
     if np.issubdtype(data_type.dtype, np.integer):
         raw = np.rint(scaled).astype(data_type.dtype)
     else:
         raw = scaled.astype(data_type.dtype)
-    raw[invalid_mask] = data_type.dtype.type(data_type.invalid_value)
+    raw[invalid_mask] = data_type.dtype.type(data_type.invalid_value(dialect))
     return raw
 
 
-def decode_raw(raw: np.ndarray, data_type: SdfDataType, z_scale: float) -> np.ndarray:
+def decode_raw(
+    raw: np.ndarray, data_type: SdfDataType, z_scale: float, dialect: SdfDialect = SdfDialect.ISO
+) -> np.ndarray:
     """Convert raw on-disk coded values back to physical height values (metres).
 
     :param raw: Array of dtype ``data_type.dtype``.
     :param data_type: SDF data area storage type of ``raw``.
     :param z_scale: Scale factor; ``data = raw * z_scale``.
+    :param dialect: SDF dialect, see :meth:`SdfDataType.invalid_value`.
     :returns: ``float64`` array in metres, with the sentinel
         replaced by ``NaN``.
     """
-    invalid_mask = raw == data_type.invalid_value
+    invalid_mask = raw == data_type.invalid_value(dialect)
     scaled = raw.astype(np.float64) * z_scale
     scaled[invalid_mask] = np.nan
     return scaled
 
 
-def suggest_z_scale(data: np.ndarray, data_type: SdfDataType) -> float:
+def suggest_z_scale(
+    data: np.ndarray, data_type: SdfDataType, dialect: SdfDialect = SdfDialect.ISO
+) -> float:
     """Suggest the smallest ``z_scale`` that encodes ``data`` without overflow.
 
     For integer data types, ``z_scale`` directly trades off range against
@@ -195,6 +223,7 @@ def suggest_z_scale(data: np.ndarray, data_type: SdfDataType) -> float:
     :param data: Height values in metres; ``NaN`` marks non-measured or
         spurious points.
     :param data_type: Target SDF data area storage type.
+    :param dialect: SDF dialect, see :meth:`SdfDataType.invalid_value`.
     :returns: A positive ``z_scale`` value, or ``1.0`` if ``data`` has no
         finite values or is not an integer data type.
     """
@@ -203,12 +232,14 @@ def suggest_z_scale(data: np.ndarray, data_type: SdfDataType) -> float:
         return 1.0
 
     info = np.iinfo(data_type.dtype)
+    # Whichever bound `dialect` reserves as the invalid-point sentinel is
+    # nudged one step towards zero, since that exact value isn't usable for
+    # real data.
+    usable_max = info.max - 1 if dialect == SdfDialect.BCR else info.max
+    usable_min = info.min if dialect == SdfDialect.BCR else info.min + 1
     high, low = float(finite.max()), float(finite.min())
-    candidates = [high / info.max] if high > 0 else []
+    candidates = [high / usable_max] if high > 0 else []
     if low < 0:
-        # info.min itself is reserved as the invalid-point sentinel (the
-        # standard sets it to each integer type's minimum), so info.min + 1
-        # is the smallest value actually usable for real data.
-        candidates.append(low / (info.min + 1))
+        candidates.append(low / usable_min)
     z_scale = max(candidates) if candidates else 1.0
     return z_scale if z_scale > 0 else 1.0
