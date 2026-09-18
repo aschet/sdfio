@@ -166,8 +166,8 @@ def dump(header: SdfHeader, data: np.ndarray, fp: IO[bytes], trailer: bytes = b"
 
     fp.write(f"{BINARY_PREFIX}{header.dialect}-{header.version}".encode("ascii"))
     fp.write(_pad(header.manufacturer_id, _MANUFACTURER_ID_SIZE))
-    fp.write(_pad(format_sdf_datetime(header.create_date), _DATE_SIZE))
-    fp.write(_pad(format_sdf_datetime(header.mod_date), _DATE_SIZE))
+    fp.write(_pad(format_sdf_datetime(header.create_date, header.version), _DATE_SIZE))
+    fp.write(_pad(format_sdf_datetime(header.mod_date, header.version), _DATE_SIZE))
     counts_struct = _COUNTS_STRUCT[header.version]
     # counts_struct.size is NumPoints+NumProfiles combined (e.g. 4 bytes for
     # v1.0's two uint16 fields); halving it gives one field's byte width, and

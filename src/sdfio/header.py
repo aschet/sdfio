@@ -96,19 +96,24 @@ _DATETIME_FORMAT = "%d%m%Y%H%M"
 _UNSET_DATETIME = "0" * len("DDMMYYYYHHMM")
 
 
-def format_sdf_datetime(value: datetime | None) -> str:
+def format_sdf_datetime(value: datetime | None, version: SdfVersion | None = None) -> str:
     """Format a datetime as the fixed-width SDF ``datetime`` field.
-
-    Only ``value``'s wall-clock components are used; any ``tzinfo`` is
-    ignored rather than converted. The caller is responsible for ensuring
-    those components already represent the correct timezone (UTC, for
-    version 2.0).
 
     :param value: ``None`` is formatted as the all-zero "not recorded"
         placeholder (see :func:`parse_sdf_datetime`).
+    :param version: If :attr:`SdfVersion.V2_0`, ``value`` is assumed to
+        already be UTC (as required by :class:`SdfHeader`) and its wall-clock
+        components are used as-is. Otherwise, or if omitted, version 1.0 and
+        BCR are treated as local time (the standard only specifies UTC for
+        version 2.0): a timezone-aware ``value`` is converted to the system
+        timezone first (see the limitation noted in
+        :func:`parse_sdf_datetime`); a naive ``value`` is assumed to already
+        represent local time and is used as-is.
     """
     if value is None:
         return _UNSET_DATETIME
+    if version != SdfVersion.V2_0 and value.tzinfo is not None:
+        value = value.astimezone()
     return value.strftime(_DATETIME_FORMAT)
 
 
@@ -116,9 +121,17 @@ def parse_sdf_datetime(value: str, version: SdfVersion | None = None) -> datetim
     """Parse the fixed-width SDF ``datetime`` field.
 
     :param version: If :attr:`SdfVersion.V2_0`, the result is tagged with UTC
-        ``tzinfo`` (version 2.0 timestamps are defined to be UTC); otherwise,
-        or if omitted, a naive datetime is returned, since no timezone is
-        defined.
+        ``tzinfo`` (version 2.0 timestamps are defined to be UTC). Otherwise,
+        or if omitted, version 1.0 and BCR are treated as local time (the
+        standard only specifies UTC for version 2.0), and the result is
+        tagged with the system's local timezone.
+
+        This is only correct if the file is read on a system in the same
+        timezone it was written in -- neither format records the writer's
+        actual timezone, so there is no way to recover it otherwise. A file
+        moved to a different timezone before being read, or converted to
+        version 2.0 there, ends up with an incorrect UTC value; this is a
+        limitation of the format, not something sdfio can detect or correct.
     :returns: ``None`` if ``value`` is the all-zero placeholder some files
         use for a date that was never recorded.
     """
@@ -126,7 +139,7 @@ def parse_sdf_datetime(value: str, version: SdfVersion | None = None) -> datetim
     if stripped == _UNSET_DATETIME:
         return None
     parsed = datetime.strptime(stripped, _DATETIME_FORMAT)
-    return parsed.replace(tzinfo=UTC) if version == SdfVersion.V2_0 else parsed
+    return parsed.replace(tzinfo=UTC) if version == SdfVersion.V2_0 else parsed.astimezone()
 
 
 def validate_trailer_xml(version: SdfVersion, trailer: str | bytes) -> None:

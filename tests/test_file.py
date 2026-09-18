@@ -71,8 +71,11 @@ def test_write_read_roundtrip(file_format: FileFormat, version: SdfVersion) -> N
         assert create_date.tzinfo == UTC
         assert mod_date.tzinfo == UTC
     else:
-        assert create_date.tzinfo is None
-        assert mod_date.tzinfo is None
+        # The standard only specifies UTC for version 2.0, so version 1.0 is
+        # treated as local time; a freshly-read date is tagged with the
+        # system timezone, not naive.
+        assert create_date.tzinfo is not None
+        assert mod_date.tzinfo is not None
 
 
 def test_write_defaults_to_binary_version_2_0() -> None:
@@ -262,6 +265,9 @@ def test_changing_data_type_incompatible_with_version_raises() -> None:
 
 
 def test_with_version_upgrades_1_0_to_2_0() -> None:
+    # The standard only specifies UTC for version 2.0, so a naive date is
+    # presumed to already be local time; upgrading to version 2.0 then
+    # converts it to UTC, shifting the wall clock accordingly.
     naive_date = datetime(2024, 1, 1, 12, 0)
     sdf = sdfio.SdfFile(
         header=sdfio.SdfHeader(
@@ -276,7 +282,7 @@ def test_with_version_upgrades_1_0_to_2_0() -> None:
     assert sdf.header.create_date is not None
     assert sdf.header.create_date.tzinfo is None
 
-    upgraded = sdf.with_version(SdfVersion.V2_0, assume_utc=True)
+    upgraded = sdf.with_version(SdfVersion.V2_0)
 
     assert upgraded.header.version == SdfVersion.V2_0
     upgraded_create_date = upgraded.header.create_date
@@ -285,24 +291,30 @@ def test_with_version_upgrades_1_0_to_2_0() -> None:
     assert upgraded_mod_date is not None
     assert upgraded_create_date.tzinfo == UTC
     assert upgraded_mod_date.tzinfo == UTC
-    # assume_utc only reattaches tzinfo; it must not shift the wall clock.
-    assert upgraded_create_date.replace(tzinfo=None) == sdf.header.create_date
+    assert upgraded_create_date == naive_date.astimezone(UTC)
 
 
-def test_with_version_rejects_naive_dates_without_assume_utc() -> None:
-    naive_date = datetime(2024, 1, 1, 12, 0)
+def test_with_version_downgrades_2_0_to_1_0() -> None:
+    # The standard only specifies UTC for version 2.0, so a UTC-aware date
+    # is converted to the system's local timezone for version 1.0, rather
+    # than being kept as UTC.
+    utc_date = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
     sdf = sdfio.SdfFile(
         header=sdfio.SdfHeader(
-            version=SdfVersion.V1_0,
+            version=SdfVersion.V2_0,
             num_points=1,
             num_profiles=1,
-            create_date=naive_date,
-            mod_date=naive_date,
+            create_date=utc_date,
+            mod_date=utc_date,
         ),
         data=np.array([[1.0]]),
     )
-    with pytest.raises(SdfFormatError, match="timezone-aware UTC"):
-        sdf.with_version(SdfVersion.V2_0)
+
+    downgraded = sdf.with_version(SdfVersion.V1_0)
+
+    assert downgraded.header.version == SdfVersion.V1_0
+    assert downgraded.header.create_date == utc_date
+    assert downgraded.header.mod_date == utc_date
 
 
 def test_with_version_rejects_incompatible_data_type_unless_replaced() -> None:
@@ -333,9 +345,9 @@ def test_with_version_rejects_non_xml_trailer_unless_replaced() -> None:
         trailer="Operator = Jane Doe",
     )
     with pytest.raises(SdfFormatError, match="must be well-formed XML"):
-        sdf.with_version(SdfVersion.V2_0, assume_utc=True)
+        sdf.with_version(SdfVersion.V2_0)
 
-    upgraded = sdf.with_version(SdfVersion.V2_0, assume_utc=True, trailer="")
+    upgraded = sdf.with_version(SdfVersion.V2_0, trailer="")
     assert upgraded.trailer == ""
 
 

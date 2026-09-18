@@ -117,29 +117,29 @@ class SdfFile:
         *,
         dialect: SdfDialect | None = None,
         data_type: DataType | int | None = None,
-        assume_utc: bool = False,
         trailer: str | bytes | None = None,
     ) -> SdfFile:
         """Return a copy of this file retargeted to a different SDF version/dialect.
 
-        Converting between versions can fail for three reasons, each
-        resolved by an explicit, opt-in parameter rather than silently
-        guessing:
+        Converting between versions can fail for two reasons, each resolved
+        by an explicit, opt-in parameter rather than silently guessing:
 
         - ``data_type``: some data types are version-restricted under ISO
           (``binary32``/``int8`` are version 2.0 only; BCR has no such
           restriction). Pass a compatible replacement if the current type
           isn't valid for ``version``/``dialect``.
-        - Timestamps: version 2.0 requires ``create_date``/``mod_date`` to
-          be timezone-aware UTC datetimes. If this file's dates are naive
-          (e.g. read from a version 1.0 file) and ``version`` is
-          :attr:`SdfVersion.V2_0`, pass ``assume_utc=True`` to reinterpret
-          their existing wall-clock values as already being UTC (no time
-          shift), or construct new dates yourself beforehand.
         - Trailer: version 2.0 requires a well-formed XML trailer, or none
           at all; version 1.0 has no such requirement. If the current
           trailer wouldn't be valid for ``version``, pass a replacement
           (e.g. ``""`` to drop it).
+
+        Timestamps need no such parameter: ``create_date``/``mod_date`` are
+        converted to ``version``'s timezone convention automatically (UTC
+        for version 2.0, the system's local timezone otherwise), shifting
+        the wall clock as needed. A naive date is presumed to already be
+        local time. This conversion is only correct if the current process
+        is running in the same timezone the file was originally written in
+        -- see :func:`sdfio.header.parse_sdf_datetime` for why.
 
         :param dialect: Defaults to this file's current dialect. Passed
             together with ``version`` (rather than changed separately
@@ -149,10 +149,9 @@ class SdfFile:
             never supports version 2.0.
         :raises SdfFormatError: If ``data_type`` isn't valid for
             ``version``/``dialect``, the trailer isn't valid for
-            ``version``, (for ``version=SdfVersion.V2_0``) the timestamps
-            aren't UTC-aware and ``assume_utc`` wasn't set, or ``dialect``
-            is :attr:`SdfDialect.BCR` and ``version`` isn't
-            :attr:`SdfVersion.V1_0` (BCR never had another version).
+            ``version``, or ``dialect`` is :attr:`SdfDialect.BCR` and
+            ``version`` isn't :attr:`SdfVersion.V1_0` (BCR never had another
+            version).
 
         Converting to a different version::
 
@@ -163,7 +162,7 @@ class SdfFile:
             >>> sdfio.write(buf, np.zeros((2, 3)), x_scale=1e-6, y_scale=1e-6,
             ...              metadata=sdfio.SdfMetadata(version=sdfio.SdfVersion.V1_0))
             >>> sdf = sdfio.SdfFile.open(io.BytesIO(buf.getvalue()))
-            >>> converted = sdf.with_version(sdfio.SdfVersion.V2_0, assume_utc=True)
+            >>> converted = sdf.with_version(sdfio.SdfVersion.V2_0)
             >>> str(converted.header.version)
             '2.0'
 
@@ -186,13 +185,14 @@ class SdfFile:
 
         create_date = self.header.create_date
         mod_date = self.header.mod_date
-        if version == SdfVersion.V2_0 and assume_utc:
-            # A None date ("not recorded") stays None -- there's no
-            # wall-clock value to reinterpret as UTC.
-            if create_date is not None and create_date.tzinfo is None:
-                create_date = create_date.replace(tzinfo=UTC)
-            if mod_date is not None and mod_date.tzinfo is None:
-                mod_date = mod_date.replace(tzinfo=UTC)
+        if version == SdfVersion.V2_0:
+            # A None date ("not recorded") stays None. A naive date is
+            # presumed to already be local time (astimezone() on a naive
+            # datetime attaches the system timezone before converting).
+            if create_date is not None:
+                create_date = create_date.astimezone(UTC)
+            if mod_date is not None:
+                mod_date = mod_date.astimezone(UTC)
 
         new_trailer = self.trailer if trailer is None else trailer
         validate_trailer_xml(version, new_trailer)

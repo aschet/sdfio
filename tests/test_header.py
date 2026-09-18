@@ -16,7 +16,9 @@ def test_datetime_roundtrip() -> None:
     value = datetime(2024, 9, 3, 18, 16)
     text = format_sdf_datetime(value)
     assert text == "030920241816"
-    assert parse_sdf_datetime(text) == value
+    parsed = parse_sdf_datetime(text)
+    assert parsed is not None
+    assert parsed.replace(tzinfo=None) == value
 
 
 def test_datetime_tagged_as_utc_for_version_2_0() -> None:
@@ -26,10 +28,19 @@ def test_datetime_tagged_as_utc_for_version_2_0() -> None:
     assert parsed == datetime(2024, 9, 3, 18, 16, tzinfo=UTC)
 
 
-def test_datetime_left_naive_for_version_1_0() -> None:
+def test_datetime_tagged_as_local_for_version_1_0() -> None:
+    # The standard only specifies UTC for version 2.0, so version 1.0 is
+    # treated as local time.
     parsed = parse_sdf_datetime("030920241816", SdfVersion.V1_0)
     assert parsed is not None
-    assert parsed.tzinfo is None
+    assert parsed.tzinfo is not None
+    assert parsed == datetime(2024, 9, 3, 18, 16).astimezone()
+
+
+def test_format_datetime_converts_aware_value_to_local_for_version_1_0() -> None:
+    aware = datetime(2024, 9, 3, 18, 16, tzinfo=UTC)
+    text = format_sdf_datetime(aware, SdfVersion.V1_0)
+    assert text == aware.astimezone().strftime("%d%m%Y%H%M")
 
 
 def test_header_rejects_unsupported_version() -> None:

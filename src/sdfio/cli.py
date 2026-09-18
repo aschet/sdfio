@@ -137,12 +137,10 @@ def main(argv: Sequence[str] | None = None) -> int:
                         validate_trailer_xml(target_version, sdf.trailer)
                     except SdfFormatError:
                         trailer = ""
-                # assume_utc: the operator explicitly requested this conversion.
                 sdf = sdf.with_version(
                     target_version,
                     dialect=target_dialect,
                     data_type=data_type,
-                    assume_utc=True,
                     trailer=trailer,
                 )
             file_format = FileFormat[args.format.upper()] if args.format is not None else None

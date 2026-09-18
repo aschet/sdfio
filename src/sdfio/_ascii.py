@@ -249,8 +249,8 @@ def dumps(header: SdfHeader, data: np.ndarray, trailer: str = "") -> str:
     lines = [f"{ASCII_PREFIX}{header.dialect}-{header.version}"]
     fields = (
         ("ManufacID", header.manufacturer_id),
-        ("CreateDate", format_sdf_datetime(header.create_date)),
-        ("ModDate", format_sdf_datetime(header.mod_date)),
+        ("CreateDate", format_sdf_datetime(header.create_date, header.version)),
+        ("ModDate", format_sdf_datetime(header.mod_date, header.version)),
         ("NumPoints", str(header.num_points)),
         ("NumProfiles", str(header.num_profiles)),
         ("Xscale", format_scientific(header.x_scale, 14, 3)),
