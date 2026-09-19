@@ -11,7 +11,7 @@ import pytest
 
 from sdfio import _ascii
 from sdfio.exceptions import SdfFormatError
-from sdfio.header import SdfDialect, SdfHeader, SdfVersion
+from sdfio.header import SdfDialect, SdfHeader
 
 # Adapted from the standard's own worked example, using a small, fully
 # specified 2x3 grid (the original elides most values with "......").
@@ -40,7 +40,7 @@ ISO_ANNEX_A_EXAMPLE = (
 
 def test_loads_parses_header() -> None:
     header, _data, _trailer = _ascii.loads(ISO_ANNEX_A_EXAMPLE)
-    assert header.version == SdfVersion.V2_0
+    assert header.dialect == SdfDialect.ISO_2_0
     assert header.binary is False
     assert header.manufacturer_id == "ISOTC213"
     assert header.num_points == 3
@@ -115,10 +115,10 @@ def test_loads_rejects_invalid_data_value() -> None:
         _ascii.loads(bad)
 
 
-def test_loads_rejects_unsupported_data_type_for_version() -> None:
-    # binary32 (code 3) is only valid for version 2.0.
+def test_loads_rejects_unsupported_data_type_for_dialect() -> None:
+    # binary32 (code 3) is only valid for ISO-2.0/BCR-1.0.
     bad = ISO_ANNEX_A_EXAMPLE.replace("aISO-2.0", "aISO-1.0")
-    with pytest.raises(SdfFormatError, match="not valid for SDF version"):
+    with pytest.raises(SdfFormatError, match="not valid for SDF dialect"):
         _ascii.loads(bad)
 
 
@@ -177,20 +177,20 @@ def test_dumps_rejects_sentinel_collision() -> None:
 
 
 def test_dumps_rejects_malformed_v2_trailer() -> None:
-    header = SdfHeader(version=SdfVersion.V2_0, num_points=1, num_profiles=1, data_type=7)
+    header = SdfHeader(dialect=SdfDialect.ISO_2_0, num_points=1, num_profiles=1, data_type=7)
     with pytest.raises(SdfFormatError, match="must be well-formed XML"):
         _ascii.dumps(header, np.zeros((1, 1)), trailer="not xml")
 
 
 def test_dumps_allows_empty_v2_trailer() -> None:
-    header = SdfHeader(version=SdfVersion.V2_0, num_points=1, num_profiles=1, data_type=7)
+    header = SdfHeader(dialect=SdfDialect.ISO_2_0, num_points=1, num_profiles=1, data_type=7)
     _ascii.dumps(header, np.zeros((1, 1)), trailer="")
 
 
 def test_dumps_loads_roundtrips_empty_trailer_as_empty_string() -> None:
     # dumps() always terminates the trailer record, even when empty -- this
     # produces two adjacent "*" markers with nothing between them.
-    header = SdfHeader(version=SdfVersion.V2_0, num_points=1, num_profiles=1, data_type=7)
+    header = SdfHeader(dialect=SdfDialect.ISO_2_0, num_points=1, num_profiles=1, data_type=7)
     text = _ascii.dumps(header, np.zeros((1, 1)), trailer="")
     assert text.endswith("*\r\n*\r\n")
     _header, _data, trailer = _ascii.loads(text)
@@ -198,7 +198,7 @@ def test_dumps_loads_roundtrips_empty_trailer_as_empty_string() -> None:
 
 
 def test_dumps_v1_trailer_need_not_be_xml() -> None:
-    header = SdfHeader(version=SdfVersion.V1_0, num_points=1, num_profiles=1, data_type=7)
+    header = SdfHeader(dialect=SdfDialect.ISO_1_0, num_points=1, num_profiles=1, data_type=7)
     _ascii.dumps(header, np.zeros((1, 1)), trailer="Operator = Jane Doe")
 
 
@@ -229,7 +229,7 @@ def test_loads_rejects_non_ascii_trailer() -> None:
 def test_dumps_roundtrips_loads() -> None:
     data = np.array([[1e-6, np.nan, -2.5e-6], [0.0, 3.14159e-6, 1.0e-6]])
     header = SdfHeader(
-        version=SdfVersion.V2_0,
+        dialect=SdfDialect.ISO_2_0,
         num_points=3,
         num_profiles=2,
         x_scale=1e-6,
@@ -268,8 +268,7 @@ def test_dumps_rejects_shape_mismatch() -> None:
 
 def test_dumps_loads_roundtrip_bcr_dialect() -> None:
     header = SdfHeader(
-        version=SdfVersion.V1_0,
-        dialect=SdfDialect.BCR,
+        dialect=SdfDialect.BCR_1_0,
         num_points=2,
         num_profiles=1,
         z_scale=1e-6,
@@ -280,7 +279,7 @@ def test_dumps_loads_roundtrip_bcr_dialect() -> None:
     assert text.startswith("aBCR-1.0")
 
     round_tripped_header, round_tripped_data, _trailer = _ascii.loads(text)
-    assert round_tripped_header.dialect == SdfDialect.BCR
+    assert round_tripped_header.dialect == SdfDialect.BCR_1_0
     np.testing.assert_allclose(round_tripped_data, data, rtol=1e-6)
 
 
@@ -296,13 +295,7 @@ def test_dumps_loads_roundtrip_none_dates() -> None:
 
 def test_loads_rejects_unknown_dialect() -> None:
     bad = ISO_ANNEX_A_EXAMPLE.replace("aISO-2.0", "aXYZ-2.0")
-    with pytest.raises(SdfFormatError, match="Unknown SDF dialect"):
-        _ascii.loads(bad)
-
-
-def test_loads_rejects_bcr_version_2_0() -> None:
-    bad = ISO_ANNEX_A_EXAMPLE.replace("aISO-2.0", "aBCR-2.0")
-    with pytest.raises(SdfFormatError, match="does not support version"):
+    with pytest.raises(SdfFormatError, match="Unknown or unsupported SDF dialect"):
         _ascii.loads(bad)
 
 

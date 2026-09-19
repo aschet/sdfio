@@ -17,9 +17,9 @@ from .exceptions import SdfFormatError
 from .header import (
     ASCII_PREFIX,
     BINARY_PREFIX,
+    MAGIC_SIZE,
     SdfDialect,
     SdfHeader,
-    SdfVersion,
     format_sdf_datetime,
     parse_sdf_datetime,
     validate_check_type,
@@ -33,7 +33,6 @@ from .header import (
 __all__ = ["HEADER_SIZE", "dump", "dumps", "load", "loads"]
 
 # Field widths from the standard's record 1 header field table.
-_VERSION_SIZE = 8
 _DIALECT_SIZE = len("ISO")  # == len("BCR")
 _MAGIC_PREFIX_SIZE = 1 + _DIALECT_SIZE + 1  # a/b + dialect + '-'
 _MANUFACTURER_ID_SIZE = 10
@@ -41,12 +40,16 @@ _DATE_SIZE = 12
 
 _STRINGS_STRUCT = struct.Struct(f"<{_MANUFACTURER_ID_SIZE}s{_DATE_SIZE}s{_DATE_SIZE}s")
 _TAIL_STRUCT = struct.Struct("<ddddBBB")
-_COUNTS_STRUCT = {SdfVersion.V1_0: struct.Struct("<HH"), SdfVersion.V2_0: struct.Struct("<II")}
+_COUNTS_STRUCT = {
+    SdfDialect.ISO_1_0: struct.Struct("<HH"),
+    SdfDialect.ISO_2_0: struct.Struct("<II"),
+    SdfDialect.BCR_1_0: struct.Struct("<HH"),
+}
 
-#: Total header size in bytes for each SDF version.
+#: Total header size in bytes for each SDF dialect.
 HEADER_SIZE = {
-    version: _VERSION_SIZE + _STRINGS_STRUCT.size + counts_struct.size + _TAIL_STRUCT.size
-    for version, counts_struct in _COUNTS_STRUCT.items()
+    dialect: MAGIC_SIZE + _STRINGS_STRUCT.size + counts_struct.size + _TAIL_STRUCT.size
+    for dialect, counts_struct in _COUNTS_STRUCT.items()
 }
 
 
@@ -67,35 +70,27 @@ def load(fp: IO[bytes]) -> tuple[SdfHeader, np.ndarray, bytes]:
         ``(num_profiles, num_points)`` array of height values in metres,
         with ``NaN`` marking non-measured or spurious points.
     :raises SdfFormatError: If the file is malformed, e.g. a bad magic,
-        unsupported version or data type, wrong data length, or a trailer
+        unsupported dialect or data type, wrong data length, or a trailer
         that isn't 7-bit ASCII.
     """
-    magic = fp.read(_VERSION_SIZE)
-    if len(magic) != _VERSION_SIZE:
+    magic = fp.read(MAGIC_SIZE)
+    if len(magic) != MAGIC_SIZE:
         raise SdfFormatError("File is too short to contain an SDF header")
     magic_text = magic.decode("ascii", errors="replace")
     if (
-        len(magic_text) != _VERSION_SIZE
+        len(magic_text) != MAGIC_SIZE
         or magic_text[0] not in (ASCII_PREFIX, BINARY_PREFIX)
         or magic_text[4] != "-"
     ):
         raise SdfFormatError(f"Not an SDF file, unexpected magic: {magic_text!r}")
     dialect_text = magic_text[1:4]
-    try:
-        dialect = SdfDialect(dialect_text)
-    except ValueError:
-        raise SdfFormatError(
-            f"Unknown SDF dialect {dialect_text!r} in magic {magic_text!r}"
-        ) from None
+    version_text = magic_text[_MAGIC_PREFIX_SIZE:]
+    dialect = SdfDialect.resolve(dialect_text, version_text, magic_text)
     if magic_text[0] != BINARY_PREFIX:
         raise SdfFormatError("ASCII magic found while parsing a binary SDF file")
-    version_text = magic_text[_MAGIC_PREFIX_SIZE:]
-    if version_text not in _COUNTS_STRUCT:
-        raise SdfFormatError(f"Unsupported SDF version {version_text!r}")
-    version = SdfVersion(version_text)
 
     manufacturer_raw, create_raw, mod_raw = _STRINGS_STRUCT.unpack(fp.read(_STRINGS_STRUCT.size))
-    counts_struct = _COUNTS_STRUCT[version]
+    counts_struct = _COUNTS_STRUCT[dialect]
     num_points, num_profiles = counts_struct.unpack(fp.read(counts_struct.size))
     (
         x_scale,
@@ -109,19 +104,18 @@ def load(fp: IO[bytes]) -> tuple[SdfHeader, np.ndarray, bytes]:
     validate_compression(compression)
     validate_check_type(check_type)
 
-    data_type = require_supported_data_type(data_type_code, version, dialect)
+    data_type = require_supported_data_type(data_type_code, dialect)
 
     # errors="replace" here is a deliberate read-side leniency (unlike the
     # trailer, ManufacID/dates are not re-validated as ASCII on read) so a
     # file that's merely non-compliant here can still be opened and
     # inspected; only *writing* one is rejected (validate_manufacturer_id_ascii).
     header = SdfHeader(
-        version=version,
         dialect=dialect,
         binary=True,
         manufacturer_id=manufacturer_raw.decode("ascii", errors="replace").rstrip(),
-        create_date=parse_sdf_datetime(create_raw.decode("ascii", errors="replace"), version),
-        mod_date=parse_sdf_datetime(mod_raw.decode("ascii", errors="replace"), version),
+        create_date=parse_sdf_datetime(create_raw.decode("ascii", errors="replace"), dialect),
+        mod_date=parse_sdf_datetime(mod_raw.decode("ascii", errors="replace"), dialect),
         num_points=num_points,
         num_profiles=num_profiles,
         x_scale=x_scale,
@@ -156,27 +150,28 @@ def dump(header: SdfHeader, data: np.ndarray, fp: IO[bytes], trailer: bytes = b"
     """
     if data.shape != header.shape:
         raise SdfFormatError(f"Data shape {data.shape} does not match header shape {header.shape}")
-    if header.version not in _COUNTS_STRUCT:
-        raise SdfFormatError(f"Unsupported SDF version {header.version!r}")
+    if header.dialect not in _COUNTS_STRUCT:
+        raise SdfFormatError(f"Unsupported SDF dialect {header.dialect!r}")
     validate_z_scale(header.z_scale)
     validate_manufacturer_id_ascii(header.manufacturer_id)
     validate_trailer_ascii(trailer)
-    validate_trailer_xml(header.version, trailer)
-    data_type = require_supported_data_type(header.data_type, header.version, header.dialect)
+    validate_trailer_xml(header.dialect, trailer)
+    data_type = require_supported_data_type(header.data_type, header.dialect)
 
-    fp.write(f"{BINARY_PREFIX}{header.dialect}-{header.version}".encode("ascii"))
+    fp.write(f"{BINARY_PREFIX}{header.dialect}".encode("ascii"))
     fp.write(_pad(header.manufacturer_id, _MANUFACTURER_ID_SIZE))
-    fp.write(_pad(format_sdf_datetime(header.create_date, header.version), _DATE_SIZE))
-    fp.write(_pad(format_sdf_datetime(header.mod_date, header.version), _DATE_SIZE))
-    counts_struct = _COUNTS_STRUCT[header.version]
+    fp.write(_pad(format_sdf_datetime(header.create_date, header.dialect), _DATE_SIZE))
+    fp.write(_pad(format_sdf_datetime(header.mod_date, header.dialect), _DATE_SIZE))
+    counts_struct = _COUNTS_STRUCT[header.dialect]
     # counts_struct.size is NumPoints+NumProfiles combined (e.g. 4 bytes for
-    # v1.0's two uint16 fields); halving it gives one field's byte width, and
-    # from that its max unsigned value (65535 for uint16, 2**32-1 for uint32).
+    # ISO-1.0/BCR-1.0's two uint16 fields); halving it gives one field's byte
+    # width, and from that its max unsigned value (65535 for uint16, 2**32-1
+    # for uint32).
     max_count = 2 ** (8 * (counts_struct.size // 2)) - 1
     if not (0 <= header.num_points <= max_count and 0 <= header.num_profiles <= max_count):
         raise SdfFormatError(
             f"NumPoints/NumProfiles must be between 0 and {max_count} for SDF "
-            f"version {header.version} (binary format)"
+            f"dialect {header.dialect} (binary format)"
         )
     fp.write(counts_struct.pack(header.num_points, header.num_profiles))
     fp.write(

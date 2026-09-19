@@ -14,28 +14,17 @@ from . import __version__
 from .datatypes import DataType
 from .exceptions import SdfError, SdfFormatError
 from .file import FileFormat, read
-from .header import SdfDialect, SdfVersion, validate_trailer_xml
+from .header import SdfDialect, validate_trailer_xml
 
 __all__ = ["main"]
 
-#: Every valid dialect/version combination, e.g. "ISO-2.0", "BCR-1.0" --
-#: mirrors the file magic's own <dialect>-<version> shape (minus the a/b
-#: prefix). BCR only ever had version 1.0, so it contributes just one.
-_TARGETS = [
-    f"{dialect}-{version}"
-    for dialect in SdfDialect
-    for version in SdfVersion
-    if not (dialect == SdfDialect.BCR and version != SdfVersion.V1_0)
-]
 
-
-def _parse_target(value: str) -> tuple[SdfDialect, SdfVersion]:
-    dialect_text, _, version_text = value.partition("-")
+def _parse_dialect(value: str) -> SdfDialect:
     try:
-        return SdfDialect(dialect_text), SdfVersion(version_text)
+        return SdfDialect(value)
     except ValueError:
         raise argparse.ArgumentTypeError(
-            f"invalid target {value!r}, expected one of {', '.join(_TARGETS)}"
+            f"invalid dialect {value!r}, expected one of {', '.join(str(d) for d in SdfDialect)}"
         ) from None
 
 
@@ -51,7 +40,7 @@ def _build_parser() -> argparse.ArgumentParser:
     info_parser.add_argument("path")
 
     convert_parser = subparsers.add_parser(
-        "convert", help="convert SDF format, version and/or data type"
+        "convert", help="convert SDF format, dialect and/or data type"
     )
     convert_parser.add_argument("source")
     convert_parser.add_argument("destination")
@@ -62,10 +51,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="target file format",
     )
     convert_parser.add_argument(
-        "-n",
-        "--number",
-        type=_parse_target,
-        metavar="{" + ",".join(_TARGETS) + "}",
+        "-d",
+        "--dialect",
+        type=_parse_dialect,
+        metavar="{" + ",".join(str(d) for d in SdfDialect) + "}",
         help="convert to a different SDF dialect and version, e.g. ISO-2.0 or BCR-1.0",
     )
     convert_parser.add_argument(
@@ -76,10 +65,10 @@ def _build_parser() -> argparse.ArgumentParser:
         help="convert the data area storage type",
     )
     convert_parser.add_argument(
-        "-d",
-        "--drop-trailer",
+        "-r",
+        "--remove-trailer",
         action="store_true",
-        help="drop the trailer if it isn't valid for --number",
+        help="remove the trailer if it isn't valid for --dialect",
     )
 
     return parser
@@ -91,7 +80,6 @@ def _print_info(path: str) -> None:
     fields = (
         ("Format", "binary" if header.binary else "ASCII"),
         ("Dialect", header.dialect),
-        ("Version", header.version),
         ("ManufacID", header.manufacturer_id),
         ("CreateDate", header.create_date if header.create_date is not None else "(not recorded)"),
         ("ModDate", header.mod_date if header.mod_date is not None else "(not recorded)"),
@@ -126,20 +114,17 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         if args.command == "convert":
             sdf = read(args.source)
-            target_dialect, target_version = args.number or (sdf.header.dialect, sdf.header.version)
+            target_dialect = args.dialect if args.dialect is not None else sdf.header.dialect
             data_type = DataType[args.data_type.upper()] if args.data_type is not None else None
-            if (target_dialect, target_version) != (sdf.header.dialect, sdf.header.version) or (
-                data_type is not None
-            ):
+            if target_dialect != sdf.header.dialect or data_type is not None:
                 trailer = None
-                if args.drop_trailer:
+                if args.remove_trailer:
                     try:
-                        validate_trailer_xml(target_version, sdf.trailer)
+                        validate_trailer_xml(target_dialect, sdf.trailer)
                     except SdfFormatError:
                         trailer = ""
-                sdf = sdf.with_version(
-                    target_version,
-                    dialect=target_dialect,
+                sdf = sdf.with_dialect(
+                    target_dialect,
                     data_type=data_type,
                     trailer=trailer,
                 )

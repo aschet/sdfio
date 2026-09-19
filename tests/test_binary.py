@@ -13,12 +13,12 @@ import pytest
 
 from sdfio import _binary
 from sdfio.exceptions import SdfFormatError
-from sdfio.header import SdfDialect, SdfHeader, SdfVersion
+from sdfio.header import SdfDialect, SdfHeader
 
 
 def _make_header(**overrides: Any) -> SdfHeader:
     defaults: dict[str, Any] = {
-        "version": SdfVersion.V2_0,
+        "dialect": SdfDialect.ISO_2_0,
         "binary": True,
         "manufacturer_id": "sdfio",
         "num_points": 3,
@@ -34,14 +34,14 @@ def _make_header(**overrides: Any) -> SdfHeader:
 
 
 def test_header_size_matches_iso_table_2() -> None:
-    assert _binary.HEADER_SIZE[SdfVersion.V1_0] == 81
-    assert _binary.HEADER_SIZE[SdfVersion.V2_0] == 85
+    assert _binary.HEADER_SIZE[SdfDialect.ISO_1_0] == 81
+    assert _binary.HEADER_SIZE[SdfDialect.ISO_2_0] == 85
 
 
-@pytest.mark.parametrize("version", [SdfVersion.V1_0, SdfVersion.V2_0])
+@pytest.mark.parametrize("dialect", [SdfDialect.ISO_1_0, SdfDialect.ISO_2_0])
 @pytest.mark.parametrize("data_type", [5, 6, 7])
-def test_roundtrip(version: SdfVersion, data_type: int) -> None:
-    header = _make_header(version=version, data_type=data_type)
+def test_roundtrip(dialect: SdfDialect, data_type: int) -> None:
+    header = _make_header(dialect=dialect, data_type=data_type)
     data = np.array([[1e-6, np.nan, -2e-6], [0.0, 3e-6, 1e-6]])
 
     buffer = io.BytesIO()
@@ -49,7 +49,7 @@ def test_roundtrip(version: SdfVersion, data_type: int) -> None:
     buffer.seek(0)
     read_header, read_data, trailer = _binary.load(buffer)
 
-    assert read_header.version == version
+    assert read_header.dialect == dialect
     assert read_header.data_type == data_type
     assert read_header.num_points == 3
     assert read_header.num_profiles == 2
@@ -59,9 +59,9 @@ def test_roundtrip(version: SdfVersion, data_type: int) -> None:
 
 
 @pytest.mark.parametrize("data_type", [3, 4])
-def test_roundtrip_version_2_only_data_types(data_type: int) -> None:
+def test_roundtrip_iso_2_0_only_data_types(data_type: int) -> None:
     header = _make_header(
-        version=SdfVersion.V2_0, data_type=data_type, num_points=2, num_profiles=1
+        dialect=SdfDialect.ISO_2_0, data_type=data_type, num_points=2, num_profiles=1
     )
     data = np.array([[1e-6, -1e-6]])
     buffer = io.BytesIO()
@@ -93,8 +93,8 @@ def test_load_rejects_truncated_file() -> None:
         _binary.load(io.BytesIO(b"bISO"))
 
 
-def test_load_rejects_unsupported_version() -> None:
-    with pytest.raises(SdfFormatError, match="Unsupported SDF version"):
+def test_load_rejects_unsupported_dialect() -> None:
+    with pytest.raises(SdfFormatError, match="Unknown or unsupported SDF dialect"):
         _binary.load(io.BytesIO(b"bISO-3.0" + b" " * 80))
 
 
@@ -120,9 +120,9 @@ def test_load_rejects_checksummed_data() -> None:
         _binary.load(io.BytesIO(bytes(corrupted)))
 
 
-def test_load_rejects_unsupported_data_type_for_version() -> None:
-    # Hand-assemble a version "1.0" header (uint16 counts) with DataType=3
-    # (binary32), which is only valid for version 2.0.
+def test_load_rejects_unsupported_data_type_for_dialect() -> None:
+    # Hand-assemble an ISO-1.0 header (uint16 counts) with DataType=3
+    # (binary32), which is only valid for ISO-2.0/BCR-1.0.
     payload = struct.pack(
         "<8s10s12s12sHHddddBBB",
         b"bISO-1.0",
@@ -139,7 +139,7 @@ def test_load_rejects_unsupported_data_type_for_version() -> None:
         3,
         0,
     )
-    with pytest.raises(SdfFormatError, match="not valid for SDF version"):
+    with pytest.raises(SdfFormatError, match="not valid for SDF dialect"):
         _binary.load(io.BytesIO(payload))
 
 
@@ -158,22 +158,22 @@ def test_dump_rejects_shape_mismatch() -> None:
         _binary.dump(header, np.zeros((3, 3)), io.BytesIO())
 
 
-def test_dump_rejects_unsupported_version() -> None:
+def test_dump_rejects_unsupported_dialect() -> None:
     header = _make_header(num_points=1, num_profiles=1)
     # Bypass SdfHeader.__post_init__ validation to test dump()'s own check.
-    header.version = "3.0"  # type: ignore[assignment]
-    with pytest.raises(SdfFormatError, match="Unsupported SDF version"):
+    header.dialect = "3.0"  # type: ignore[assignment]
+    with pytest.raises(SdfFormatError, match="Unsupported SDF dialect"):
         _binary.dump(header, np.zeros((1, 1)), io.BytesIO())
 
 
 def test_dump_rejects_malformed_v2_trailer() -> None:
-    header = _make_header(version=SdfVersion.V2_0, num_points=1, num_profiles=1)
+    header = _make_header(dialect=SdfDialect.ISO_2_0, num_points=1, num_profiles=1)
     with pytest.raises(SdfFormatError, match="must be well-formed XML"):
         _binary.dump(header, np.zeros((1, 1)), io.BytesIO(), trailer=b"not xml")
 
 
 def test_dump_allows_empty_v2_trailer() -> None:
-    header = _make_header(version=SdfVersion.V2_0, num_points=1, num_profiles=1)
+    header = _make_header(dialect=SdfDialect.ISO_2_0, num_points=1, num_profiles=1)
     _binary.dump(header, np.zeros((1, 1)), io.BytesIO(), trailer=b"")
 
 
@@ -200,14 +200,14 @@ def test_load_rejects_non_ascii_trailer() -> None:
         _binary.load(buffer)
 
 
-def test_dump_rejects_data_type_invalid_for_version() -> None:
-    header = _make_header(version=SdfVersion.V1_0, data_type=3, num_points=2, num_profiles=1)
-    with pytest.raises(SdfFormatError, match="not valid for SDF version"):
+def test_dump_rejects_data_type_invalid_for_dialect() -> None:
+    header = _make_header(dialect=SdfDialect.ISO_1_0, data_type=3, num_points=2, num_profiles=1)
+    with pytest.raises(SdfFormatError, match="not valid for SDF dialect"):
         _binary.dump(header, np.zeros((1, 2)), io.BytesIO())
 
 
-def test_dump_rejects_num_points_exceeding_version_width() -> None:
-    header = _make_header(version=SdfVersion.V1_0, data_type=7, num_points=70000, num_profiles=1)
+def test_dump_rejects_num_points_exceeding_dialect_width() -> None:
+    header = _make_header(dialect=SdfDialect.ISO_1_0, data_type=7, num_points=70000, num_profiles=1)
     with pytest.raises(SdfFormatError, match="NumPoints/NumProfiles must be between"):
         _binary.dump(header, np.zeros((1, 70000)), io.BytesIO())
 
@@ -226,16 +226,14 @@ def test_dumps_loads_roundtrip() -> None:
 
 
 def test_roundtrip_bcr_dialect() -> None:
-    header = _make_header(
-        version=SdfVersion.V1_0, dialect=SdfDialect.BCR, data_type=3, num_points=2, num_profiles=1
-    )
+    header = _make_header(dialect=SdfDialect.BCR_1_0, data_type=3, num_points=2, num_profiles=1)
     data = np.array([[1e-6, -2e-6]])
     buffer = io.BytesIO()
     _binary.dump(header, data, buffer)
     buffer.seek(0)
     read_header, read_data, _trailer = _binary.load(buffer)
 
-    assert read_header.dialect == SdfDialect.BCR
+    assert read_header.dialect == SdfDialect.BCR_1_0
     assert read_header.magic == "bBCR-1.0"
     np.testing.assert_allclose(read_data, data, rtol=1e-6, atol=1e-9)
 
@@ -251,31 +249,8 @@ def test_roundtrip_none_dates() -> None:
 
 
 def test_load_rejects_unknown_dialect() -> None:
-    with pytest.raises(SdfFormatError, match="Unknown SDF dialect"):
+    with pytest.raises(SdfFormatError, match="Unknown or unsupported SDF dialect"):
         _binary.load(io.BytesIO(b"bXYZ-1.0" + b" " * 80))
-
-
-def test_load_rejects_bcr_version_2_0() -> None:
-    # An otherwise well-formed header (BCR never had version 2.0, so this is
-    # the only thing that should be rejected here).
-    payload = struct.pack(
-        "<8s10s12s12sIIddddBBB",
-        b"bBCR-2.0",
-        b"sdfio     ",
-        b"010120240000",
-        b"010120240000",
-        1,
-        1,
-        1e-6,
-        1e-6,
-        1e-6,
-        -1.0,
-        0,
-        7,  # binary64
-        0,
-    )
-    with pytest.raises(SdfFormatError, match="does not support version"):
-        _binary.load(io.BytesIO(payload))
 
 
 def test_load_rejects_bcr_checksum_too() -> None:

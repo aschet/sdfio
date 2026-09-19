@@ -16,7 +16,7 @@ import sdfio
 from sdfio.datatypes import DataType
 from sdfio.exceptions import SdfFormatError
 from sdfio.file import FileFormat
-from sdfio.header import SdfVersion
+from sdfio.header import SdfDialect
 
 
 def _sample_data() -> np.ndarray:
@@ -39,8 +39,8 @@ def test_write_read_roundtrip_via_path(tmp_path: Path) -> None:
 
 
 @pytest.mark.parametrize("file_format", [FileFormat.BINARY, FileFormat.ASCII])
-@pytest.mark.parametrize("version", [SdfVersion.V1_0, SdfVersion.V2_0])
-def test_write_read_roundtrip(file_format: FileFormat, version: SdfVersion) -> None:
+@pytest.mark.parametrize("dialect", [SdfDialect.ISO_1_0, SdfDialect.ISO_2_0])
+def test_write_read_roundtrip(file_format: FileFormat, dialect: SdfDialect) -> None:
     buffer = io.BytesIO()
     data = _sample_data()
     sdfio.write(
@@ -50,13 +50,13 @@ def test_write_read_roundtrip(file_format: FileFormat, version: SdfVersion) -> N
         y_scale=2e-6,
         z_scale=1e-7,
         format=file_format,
-        metadata=sdfio.SdfMetadata(version=version, data_type=DataType.BINARY64),
+        metadata=sdfio.SdfMetadata(dialect=dialect, data_type=DataType.BINARY64),
     )
     buffer.seek(0)
 
     sdf = sdfio.read(buffer)
 
-    assert sdf.header.version == version
+    assert sdf.header.dialect == dialect
     assert sdf.header.binary == (file_format == FileFormat.BINARY)
     assert sdf.header.num_points == 3
     assert sdf.header.num_profiles == 2
@@ -67,7 +67,7 @@ def test_write_read_roundtrip(file_format: FileFormat, version: SdfVersion) -> N
     mod_date = sdf.header.mod_date
     assert create_date is not None
     assert mod_date is not None
-    if version == SdfVersion.V2_0:
+    if dialect == SdfDialect.ISO_2_0:
         assert create_date.tzinfo == UTC
         assert mod_date.tzinfo == UTC
     else:
@@ -78,18 +78,18 @@ def test_write_read_roundtrip(file_format: FileFormat, version: SdfVersion) -> N
         assert mod_date.tzinfo is not None
 
 
-def test_write_defaults_to_binary_version_2_0() -> None:
+def test_write_defaults_to_binary_iso_2_0() -> None:
     buffer = io.BytesIO()
     sdfio.write(buffer, np.zeros((1, 1)), x_scale=1e-6, y_scale=1e-6)
     buffer.seek(0)
     sdf = sdfio.read(buffer)
     assert sdf.header.binary is True
-    assert sdf.header.version == SdfVersion.V2_0
+    assert sdf.header.dialect == SdfDialect.ISO_2_0
 
 
 @pytest.mark.parametrize("file_format", [FileFormat.BINARY, FileFormat.ASCII])
-@pytest.mark.parametrize("version", [SdfVersion.V1_0, SdfVersion.V2_0])
-def test_trailer_xml_roundtrip(file_format: FileFormat, version: SdfVersion) -> None:
+@pytest.mark.parametrize("dialect", [SdfDialect.ISO_1_0, SdfDialect.ISO_2_0])
+def test_trailer_xml_roundtrip(file_format: FileFormat, dialect: SdfDialect) -> None:
     # A single well-formed XML document with one root element, as required
     # for version 2.0 (and commonly used for version 1.0 too).
     root = ET.Element("Metadata")
@@ -97,7 +97,7 @@ def test_trailer_xml_roundtrip(file_format: FileFormat, version: SdfVersion) -> 
 
     sdf = sdfio.SdfFile(
         header=sdfio.SdfHeader(
-            version=version, binary=file_format == FileFormat.BINARY, num_points=1, num_profiles=1
+            dialect=dialect, binary=file_format == FileFormat.BINARY, num_points=1, num_profiles=1
         ),
         data=np.zeros((1, 1)),
     )
@@ -254,24 +254,26 @@ def test_data_type_roundtrips_and_rejects_unknown_code() -> None:
         sdf.data_type = 99
 
 
-def test_changing_data_type_incompatible_with_version_raises() -> None:
+def test_changing_data_type_incompatible_with_dialect_raises() -> None:
     sdf = sdfio.SdfFile(
-        header=sdfio.SdfHeader(version=SdfVersion.V1_0, num_points=1, num_profiles=1, data_type=5),
+        header=sdfio.SdfHeader(
+            dialect=SdfDialect.ISO_1_0, num_points=1, num_profiles=1, data_type=5
+        ),
         data=np.array([[1.0]]),
     )
-    sdf.data_type = DataType.BINARY32  # version 2.0 only
-    with pytest.raises(SdfFormatError, match="not valid for SDF version"):
+    sdf.data_type = DataType.BINARY32  # ISO-2.0/BCR-1.0 only
+    with pytest.raises(SdfFormatError, match="not valid for SDF dialect"):
         sdf.dumps()
 
 
-def test_with_version_upgrades_1_0_to_2_0() -> None:
+def test_with_dialect_upgrades_iso_1_0_to_2_0() -> None:
     # The standard only specifies UTC for version 2.0, so a naive date is
-    # presumed to already be local time; upgrading to version 2.0 then
-    # converts it to UTC, shifting the wall clock accordingly.
+    # presumed to already be local time; upgrading to ISO-2.0 then converts
+    # it to UTC, shifting the wall clock accordingly.
     naive_date = datetime(2024, 1, 1, 12, 0)
     sdf = sdfio.SdfFile(
         header=sdfio.SdfHeader(
-            version=SdfVersion.V1_0,
+            dialect=SdfDialect.ISO_1_0,
             num_points=1,
             num_profiles=1,
             create_date=naive_date,
@@ -282,9 +284,9 @@ def test_with_version_upgrades_1_0_to_2_0() -> None:
     assert sdf.header.create_date is not None
     assert sdf.header.create_date.tzinfo is None
 
-    upgraded = sdf.with_version(SdfVersion.V2_0)
+    upgraded = sdf.with_dialect(SdfDialect.ISO_2_0)
 
-    assert upgraded.header.version == SdfVersion.V2_0
+    assert upgraded.header.dialect == SdfDialect.ISO_2_0
     upgraded_create_date = upgraded.header.create_date
     upgraded_mod_date = upgraded.header.mod_date
     assert upgraded_create_date is not None
@@ -294,14 +296,14 @@ def test_with_version_upgrades_1_0_to_2_0() -> None:
     assert upgraded_create_date == naive_date.astimezone(UTC)
 
 
-def test_with_version_downgrades_2_0_to_1_0() -> None:
+def test_with_dialect_downgrades_iso_2_0_to_1_0() -> None:
     # The standard only specifies UTC for version 2.0, so a UTC-aware date
     # is converted to the system's local timezone for version 1.0, rather
     # than being kept as UTC.
     utc_date = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
     sdf = sdfio.SdfFile(
         header=sdfio.SdfHeader(
-            version=SdfVersion.V2_0,
+            dialect=SdfDialect.ISO_2_0,
             num_points=1,
             num_profiles=1,
             create_date=utc_date,
@@ -310,32 +312,32 @@ def test_with_version_downgrades_2_0_to_1_0() -> None:
         data=np.array([[1.0]]),
     )
 
-    downgraded = sdf.with_version(SdfVersion.V1_0)
+    downgraded = sdf.with_dialect(SdfDialect.ISO_1_0)
 
-    assert downgraded.header.version == SdfVersion.V1_0
+    assert downgraded.header.dialect == SdfDialect.ISO_1_0
     assert downgraded.header.create_date == utc_date
     assert downgraded.header.mod_date == utc_date
 
 
-def test_with_version_rejects_incompatible_data_type_unless_replaced() -> None:
+def test_with_dialect_rejects_incompatible_data_type_unless_replaced() -> None:
     sdf = sdfio.SdfFile(
         header=sdfio.SdfHeader(
-            version=SdfVersion.V2_0, num_points=1, num_profiles=1, data_type=DataType.BINARY32
+            dialect=SdfDialect.ISO_2_0, num_points=1, num_profiles=1, data_type=DataType.BINARY32
         ),
         data=np.array([[1.0]]),
     )
-    with pytest.raises(SdfFormatError, match="not valid for SDF version"):
-        sdf.with_version(SdfVersion.V1_0)
+    with pytest.raises(SdfFormatError, match="not valid for SDF dialect"):
+        sdf.with_dialect(SdfDialect.ISO_1_0)
 
-    downgraded = sdf.with_version(SdfVersion.V1_0, data_type=DataType.INT16)
+    downgraded = sdf.with_dialect(SdfDialect.ISO_1_0, data_type=DataType.INT16)
     assert downgraded.header.data_type == DataType.INT16
 
 
-def test_with_version_rejects_non_xml_trailer_unless_replaced() -> None:
+def test_with_dialect_rejects_non_xml_trailer_unless_replaced() -> None:
     naive_date = datetime(2024, 1, 1, 12, 0)
     sdf = sdfio.SdfFile(
         header=sdfio.SdfHeader(
-            version=SdfVersion.V1_0,
+            dialect=SdfDialect.ISO_1_0,
             num_points=1,
             num_profiles=1,
             create_date=naive_date,
@@ -345,9 +347,9 @@ def test_with_version_rejects_non_xml_trailer_unless_replaced() -> None:
         trailer="Operator = Jane Doe",
     )
     with pytest.raises(SdfFormatError, match="must be well-formed XML"):
-        sdf.with_version(SdfVersion.V2_0)
+        sdf.with_dialect(SdfDialect.ISO_2_0)
 
-    upgraded = sdf.with_version(SdfVersion.V2_0, trailer="")
+    upgraded = sdf.with_dialect(SdfDialect.ISO_2_0, trailer="")
     assert upgraded.trailer == ""
 
 
@@ -392,7 +394,7 @@ def test_dumps_rejects_non_positive_z_scale(z_scale: float) -> None:
 def test_sdffile_loads_dumps_roundtrip(file_format: FileFormat) -> None:
     data = _sample_data()
     header = sdfio.SdfHeader(
-        version=SdfVersion.V2_0,
+        dialect=SdfDialect.ISO_2_0,
         binary=file_format == FileFormat.BINARY,
         num_points=3,
         num_profiles=2,

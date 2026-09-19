@@ -20,7 +20,6 @@ from .header import (
     BINARY_PREFIX,
     SdfDialect,
     SdfHeader,
-    SdfVersion,
     format_sdf_datetime,
     parse_sdf_datetime,
     validate_check_type,
@@ -42,6 +41,12 @@ _INVALID_MARKER = "BAD"
 # \r? here is a read-side leniency to also accept bare LF.
 _LINE_SPLIT_RE = re.compile(r"\r?\n")
 _TERMINATOR_RE = re.compile(r"^[ \t]*\*[ \t]*$")
+
+
+def _format_scale_field(value: float) -> str:
+    # Xscale/Yscale/Zscale/Zresolution are always written at binary64
+    # precision, regardless of the data area's own DataType.
+    return format_scientific(value, 14, 3)
 
 
 def _split_records(remainder: str) -> list[str]:
@@ -112,7 +117,7 @@ def loads(text: str) -> tuple[SdfHeader, np.ndarray, str]:
         ``(num_profiles, num_points)`` array of height values in metres,
         with ``NaN`` marking non-measured or spurious points.
     :raises SdfFormatError: If the file is malformed, e.g. a bad magic,
-        unsupported version or data type, missing records, or a trailer
+        unsupported dialect or data type, missing records, or a trailer
         that isn't 7-bit ASCII.
     """
     text = text.lstrip("\ufeff")
@@ -128,17 +133,8 @@ def loads(text: str) -> tuple[SdfHeader, np.ndarray, str]:
     if magic_match.group("prefix") != ASCII_PREFIX:
         raise SdfFormatError("Binary magic found while parsing an ASCII SDF file")
     dialect_text = magic_match.group("dialect")
-    try:
-        dialect = SdfDialect(dialect_text)
-    except ValueError:
-        raise SdfFormatError(
-            f"Unknown SDF dialect {dialect_text!r} in magic {magic_line!r}"
-        ) from None
     version_text = magic_match.group("version")
-    try:
-        version = SdfVersion(version_text)
-    except ValueError:
-        raise SdfFormatError(f"Unsupported SDF version {version_text!r}") from None
+    dialect = SdfDialect.resolve(dialect_text, version_text, magic_line)
 
     records = _split_records(remainder)
     if len(records) < 3:
@@ -152,17 +148,16 @@ def loads(text: str) -> tuple[SdfHeader, np.ndarray, str]:
 
     fields = _read_fields(header_text)
     data_type_code = _parse_int(fields, "DataType")
-    data_type = require_supported_data_type(data_type_code, version, dialect)
+    data_type = require_supported_data_type(data_type_code, dialect)
     validate_compression(_parse_int(fields, "Compression"))
     validate_check_type(_parse_int(fields, "CheckType"))
 
     header = SdfHeader(
-        version=version,
         dialect=dialect,
         binary=False,
         manufacturer_id=_field(fields, "ManufacID").strip(),
-        create_date=parse_sdf_datetime(_field(fields, "CreateDate"), version),
-        mod_date=parse_sdf_datetime(_field(fields, "ModDate"), version),
+        create_date=parse_sdf_datetime(_field(fields, "CreateDate"), dialect),
+        mod_date=parse_sdf_datetime(_field(fields, "ModDate"), dialect),
         num_points=_parse_int(fields, "NumPoints"),
         num_profiles=_parse_int(fields, "NumProfiles"),
         x_scale=_parse_float(fields, "Xscale"),
@@ -243,20 +238,20 @@ def dumps(header: SdfHeader, data: np.ndarray, trailer: str = "") -> str:
     validate_z_scale(header.z_scale)
     validate_manufacturer_id_ascii(header.manufacturer_id)
     validate_trailer_ascii(trailer)
-    validate_trailer_xml(header.version, trailer)
-    data_type = require_supported_data_type(header.data_type, header.version, header.dialect)
+    validate_trailer_xml(header.dialect, trailer)
+    data_type = require_supported_data_type(header.data_type, header.dialect)
 
-    lines = [f"{ASCII_PREFIX}{header.dialect}-{header.version}"]
+    lines = [f"{ASCII_PREFIX}{header.dialect}"]
     fields = (
         ("ManufacID", header.manufacturer_id),
-        ("CreateDate", format_sdf_datetime(header.create_date, header.version)),
-        ("ModDate", format_sdf_datetime(header.mod_date, header.version)),
+        ("CreateDate", format_sdf_datetime(header.create_date, header.dialect)),
+        ("ModDate", format_sdf_datetime(header.mod_date, header.dialect)),
         ("NumPoints", str(header.num_points)),
         ("NumProfiles", str(header.num_profiles)),
-        ("Xscale", format_scientific(header.x_scale, 14, 3)),
-        ("Yscale", format_scientific(header.y_scale, 14, 3)),
-        ("Zscale", format_scientific(header.z_scale, 14, 3)),
-        ("Zresolution", format_scientific(header.z_resolution, 14, 3)),
+        ("Xscale", _format_scale_field(header.x_scale)),
+        ("Yscale", _format_scale_field(header.y_scale)),
+        ("Zscale", _format_scale_field(header.z_scale)),
+        ("Zresolution", _format_scale_field(header.z_resolution)),
         ("Compression", "0"),  # Never supported, see SdfHeader's docstring.
         ("DataType", str(header.data_type)),
         ("CheckType", "0"),  # Never written, see SdfHeader's docstring.

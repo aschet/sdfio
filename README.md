@@ -14,10 +14,10 @@ compact binary format. It is used as a software measurement standard
 instruments, and is also used more generally as a surface topography
 interchange format.
 
-Supported variants: ISO-1.0, ISO-2.0, and BCR-1.0 (the
+Supported dialects: ISO-1.0, ISO-2.0, and BCR-1.0 (the
 pre-standardization proposal this format is based on), without
-compression or checksummed data areas. Other dialects and vendor-specific
-extensions are not supported.
+compression or checksummed data areas. Vendor-specific extensions are not
+supported.
 
 ## Installation
 
@@ -41,26 +41,25 @@ print(sdf.header)
 ```
 
 Non-measured or spurious points (the `BAD` marker in ASCII files, or the
-minimum representable value of the data type in binary files) are
-represented as `NaN` in `sdf.data`, and `sdfio.write` writes `NaN` values
-back the same way.
+data type's reserved sentinel value in binary files) are represented as
+`NaN` in `sdf.data`, and `sdfio.write` writes `NaN` values back the same way.
 
 ## Command Line
 
 ```bash
 sdfio info surface.sdf
 sdfio convert -f ascii surface.sdf surface_ascii.sdf
-sdfio convert -n 2.0 -d surface_v1.sdf surface_v2.sdf
+sdfio convert -d ISO-1.0 -r surface_v2.sdf surface_v1.sdf
 sdfio convert -t int16 surface.sdf surface_int16.sdf
 ```
 
 `convert` can change the ASCII/binary format (`-f`/`--format`), the SDF
-version number (`-n`/`--number`), and the data area storage type
-(`-t`/`--type`) independently; any not given are kept from the source file.
-Converting to a version number whose trailer requirements the source file
-doesn't meet fails unless `-d`/`--drop-trailer` is passed to discard it. Run
-`sdfio convert --help` for details. The CLI is also runnable as
-`python -m sdfio`.
+dialect and version (`-d`/`--dialect`, e.g. `ISO-2.0` or `BCR-1.0`), and the
+data area storage type (`-t`/`--type`) independently; any not given are kept
+from the source file. Converting to a dialect whose trailer requirements the
+source file doesn't meet fails unless `-r`/`--remove-trailer` is passed to
+discard it. Run `sdfio convert --help` for details. The CLI is also runnable
+as `python -m sdfio`.
 
 ## Development
 

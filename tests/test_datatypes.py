@@ -16,7 +16,7 @@ from sdfio.datatypes import (
     validate_data_range,
 )
 from sdfio.exceptions import SdfFormatError
-from sdfio.header import SdfDialect, SdfVersion
+from sdfio.header import SdfDialect
 
 
 def test_get_data_type_by_code() -> None:
@@ -35,38 +35,36 @@ def test_get_data_type_unknown_code() -> None:
 
 
 @pytest.mark.parametrize(
-    ("data_type", "version", "expected"),
+    ("data_type", "dialect", "expected"),
     [
-        (DataType.BINARY32, SdfVersion.V2_0, True),
-        (DataType.BINARY32, SdfVersion.V1_0, False),
-        (DataType.INT8, SdfVersion.V2_0, True),
-        (DataType.INT8, SdfVersion.V1_0, False),
-        (DataType.INT16, SdfVersion.V1_0, True),
-        (DataType.INT16, SdfVersion.V2_0, True),
-        (DataType.INT32, SdfVersion.V1_0, True),
-        (DataType.BINARY64, SdfVersion.V1_0, True),
-        (DataType.BINARY64, SdfVersion.V2_0, True),
+        (DataType.BINARY32, SdfDialect.ISO_2_0, True),
+        (DataType.BINARY32, SdfDialect.ISO_1_0, False),
+        (DataType.BINARY32, SdfDialect.BCR_1_0, True),
+        (DataType.INT8, SdfDialect.ISO_2_0, True),
+        (DataType.INT8, SdfDialect.ISO_1_0, False),
+        (DataType.INT8, SdfDialect.BCR_1_0, True),
+        (DataType.INT16, SdfDialect.ISO_1_0, True),
+        (DataType.INT16, SdfDialect.ISO_2_0, True),
+        (DataType.INT16, SdfDialect.BCR_1_0, True),
+        (DataType.INT32, SdfDialect.ISO_1_0, True),
+        (DataType.BINARY64, SdfDialect.ISO_1_0, True),
+        (DataType.BINARY64, SdfDialect.ISO_2_0, True),
     ],
 )
-def test_version_support(data_type: DataType, version: SdfVersion, expected: bool) -> None:
-    assert get_data_type(data_type).is_supported(version, SdfDialect.ISO) is expected
-
-
-@pytest.mark.parametrize("data_type", [DataType.BINARY32, DataType.INT8, DataType.INT16])
-def test_version_support_bcr_ignores_iso_version_restriction(data_type: DataType) -> None:
-    assert get_data_type(data_type).is_supported(SdfVersion.V1_0, SdfDialect.BCR) is True
+def test_dialect_support(data_type: DataType, dialect: SdfDialect, expected: bool) -> None:
+    assert get_data_type(data_type).is_supported(dialect) is expected
 
 
 def test_invalid_value_iso_is_minimum() -> None:
     data_type = get_data_type(DataType.INT16)
-    assert data_type.invalid_value(SdfDialect.ISO) == np.iinfo(data_type.dtype).min
+    assert data_type.invalid_value(SdfDialect.ISO_2_0) == np.iinfo(data_type.dtype).min
 
 
 def test_invalid_value_bcr_is_maximum() -> None:
     # BCR still had unsigned types where 0 (the minimum for a signed type)
     # is a valid low bound, so it used the maximum as the sentinel instead.
     data_type = get_data_type(DataType.INT16)
-    assert data_type.invalid_value(SdfDialect.BCR) == np.iinfo(data_type.dtype).max
+    assert data_type.invalid_value(SdfDialect.BCR_1_0) == np.iinfo(data_type.dtype).max
 
 
 def test_validate_data_range_ignores_invalid_entries() -> None:
@@ -98,17 +96,17 @@ def test_validate_data_range_rejects_sentinel_collision() -> None:
 
 def test_validate_data_range_rejects_float_sentinel_collision() -> None:
     data_type = get_data_type(DataType.BINARY64)
-    raw = np.array([data_type.invalid_value(SdfDialect.ISO)])
+    raw = np.array([data_type.invalid_value(SdfDialect.ISO_2_0)])
     with pytest.raises(SdfFormatError, match="invalid-point sentinel"):
         validate_data_range(raw, invalid_mask=np.array([False]), data_type=data_type)
 
 
 def test_validate_data_range_rejects_bcr_sentinel_collision() -> None:
     data_type = get_data_type(DataType.INT16)
-    raw = np.array([data_type.invalid_value(SdfDialect.BCR)])
+    raw = np.array([data_type.invalid_value(SdfDialect.BCR_1_0)])
     with pytest.raises(SdfFormatError, match="invalid-point sentinel"):
         validate_data_range(
-            raw, invalid_mask=np.array([False]), data_type=data_type, dialect=SdfDialect.BCR
+            raw, invalid_mask=np.array([False]), data_type=data_type, dialect=SdfDialect.BCR_1_0
         )
 
 
@@ -121,7 +119,7 @@ def test_encode_decode_raw_roundtrip(data_type_code: DataType) -> None:
     raw = encode_raw(data, data_type, z_scale)
 
     assert raw.dtype == data_type.dtype
-    assert raw[1] == data_type.dtype.type(data_type.invalid_value(SdfDialect.ISO))
+    assert raw[1] == data_type.dtype.type(data_type.invalid_value(SdfDialect.ISO_2_0))
     np.testing.assert_allclose(decode_raw(raw, data_type, z_scale), data, equal_nan=True)
 
 
@@ -131,11 +129,11 @@ def test_encode_decode_raw_roundtrip_bcr(data_type_code: DataType) -> None:
     data = np.array([1.0, np.nan, -2.0, 0.0])
     z_scale = 1.0
 
-    raw = encode_raw(data, data_type, z_scale, SdfDialect.BCR)
+    raw = encode_raw(data, data_type, z_scale, SdfDialect.BCR_1_0)
 
-    assert raw[1] == data_type.dtype.type(data_type.invalid_value(SdfDialect.BCR))
+    assert raw[1] == data_type.dtype.type(data_type.invalid_value(SdfDialect.BCR_1_0))
     np.testing.assert_allclose(
-        decode_raw(raw, data_type, z_scale, SdfDialect.BCR), data, equal_nan=True
+        decode_raw(raw, data_type, z_scale, SdfDialect.BCR_1_0), data, equal_nan=True
     )
 
 
@@ -190,10 +188,10 @@ def test_suggest_z_scale_maximizes_resolution_bcr() -> None:
     data_type = get_data_type(DataType.INT16)
     data = np.array([1.0e-3, -0.5e-3, np.nan])
 
-    z_scale = suggest_z_scale(data, data_type, SdfDialect.BCR)
-    raw = encode_raw(data, data_type, z_scale, SdfDialect.BCR)
+    z_scale = suggest_z_scale(data, data_type, SdfDialect.BCR_1_0)
+    raw = encode_raw(data, data_type, z_scale, SdfDialect.BCR_1_0)
 
     assert raw[np.argmax(data[:2])] == 32766  # avoids the reserved maximum, 32767
     np.testing.assert_allclose(
-        decode_raw(raw, data_type, z_scale, SdfDialect.BCR)[:2], data[:2], rtol=1e-4
+        decode_raw(raw, data_type, z_scale, SdfDialect.BCR_1_0)[:2], data[:2], rtol=1e-4
     )

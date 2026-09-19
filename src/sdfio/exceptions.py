@@ -18,4 +18,4 @@ class SdfFormatError(SdfError):
 
 
 class SdfVersionError(SdfFormatError):
-    """Raised when an SDF version or version/feature combination is unsupported."""
+    """Raised when an SDF dialect string is not recognized."""
