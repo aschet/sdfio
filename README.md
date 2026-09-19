@@ -2,6 +2,7 @@
 
 [![CI](https://github.com/aschet/sdfio/actions/workflows/ci.yml/badge.svg)](https://github.com/aschet/sdfio/actions/workflows/ci.yml)
 [![Docs](https://github.com/aschet/sdfio/actions/workflows/docs.yml/badge.svg)](https://aschet.github.io/sdfio/)
+[![PyPI](https://img.shields.io/pypi/v/sdfio.svg)](https://pypi.org/project/sdfio/)
 
 <!-- docs-include-start -->
 
