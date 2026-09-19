@@ -40,6 +40,11 @@ print(sdf.data.shape)
 print(sdf.header)
 ```
 
+`sdf.data` is a `(num_profiles, num_points)` array of height values in
+metres, in the standard's right-handed coordinate system: y increases with
+row index and x with column index (`sdfio.SdfFile.x_axis`/`y_axis` return
+the coordinates, also in metres).
+
 Non-measured or spurious points (the `BAD` marker in ASCII files, or the
 data type's reserved sentinel value in binary files) are represented as
 `NaN` in `sdf.data`, and `sdfio.write` writes `NaN` values back the same way.

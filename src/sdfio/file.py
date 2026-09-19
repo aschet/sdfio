@@ -54,7 +54,9 @@ class SdfFile:
 
     :param header: Parsed record 1 header fields.
     :param data: ``(num_profiles, num_points)`` array of height values in
-        metres, with ``NaN`` marking non-measured or spurious points.
+        metres, with ``NaN`` marking non-measured or spurious points. ``y``
+        increases with row index, in a right-handed coordinate system --
+        see :attr:`x_axis`/:attr:`y_axis`.
     :param trailer: Raw record 3 trailer content; text for ASCII files,
         bytes for binary files.
     """
@@ -88,6 +90,11 @@ class SdfFile:
     @property
     def y_axis(self) -> np.ndarray:
         """Y-axis coordinates in metres: ``y_i = (i - 1) * y_scale``, ``i = 1..num_profiles``.
+
+        ``y`` increases with row index, per the standard's right-handed
+        coordinate system. :attr:`SdfDialect.reverses_profile_order` is what
+        keeps this true for BCR-1.0 too, despite its different on-disk row
+        order.
 
         See :attr:`x_axis` for why ``num_profiles`` (not ``num_points``) is
         the correct length here.

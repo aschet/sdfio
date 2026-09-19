@@ -118,9 +118,9 @@ class SdfDialect(StrEnum):
 
         This reflects observed behaviour, not a spec requirement:
         MountainsMap renders BCR-1.0 with the first profile at the maximum
-        y, unlike ISO. sdfio matches that on both read and write so files
-        display consistently there; a different tool could in principle
-        disagree.
+        y, unlike ISO. sdfio matches that on both read and write, so
+        :attr:`SdfFile.y_axis`'s y-increases-with-row-index convention holds
+        for every dialect; a different tool could in principle disagree.
         """
         return self is SdfDialect.BCR_1_0
 
