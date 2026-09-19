@@ -198,7 +198,8 @@ def _parse_data(data_text: str, header: SdfHeader, data_type: SdfDataType) -> np
     invalid_mask = np.isnan(values)
     scaled = values * header.z_scale
     scaled[invalid_mask] = np.nan
-    return scaled.reshape(header.num_profiles, header.num_points)
+    data = scaled.reshape(header.num_profiles, header.num_points)
+    return data[::-1] if header.dialect.reverses_profile_order else data
 
 
 def load(fp: IO[str]) -> tuple[SdfHeader, np.ndarray, str]:
@@ -260,8 +261,9 @@ def dumps(header: SdfHeader, data: np.ndarray, trailer: str = "") -> str:
         lines.append(f"{name} = {value}")
     lines.append("*")
 
-    raw = data / header.z_scale
-    validate_data_range(raw, np.isnan(data), data_type, header.dialect)
+    write_data = data[::-1] if header.dialect.reverses_profile_order else data
+    raw = write_data / header.z_scale
+    validate_data_range(raw, np.isnan(write_data), data_type, header.dialect)
     for row in raw:
         lines.append(" ".join(_format_value(value, data_type) for value in row))
     lines.append("*")

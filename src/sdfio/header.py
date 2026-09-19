@@ -106,6 +106,24 @@ class SdfDialect(StrEnum):
         """
         return self is SdfDialect.BCR_1_0
 
+    @property
+    def reverses_profile_order(self) -> bool:
+        """Whether the first profile stored on disk is at the maximum y, not y=0.
+
+        True only for :attr:`BCR_1_0`. BCR never defined which direction
+        the first stored profile corresponds to -- it only says profiles
+        are stored "in the order in which they are collected", with no
+        formula fixing a direction. ISO 25178-71 later fixed row 1 at y=0
+        (``y_i = (i - 1) * Yscale``).
+
+        This reflects observed behaviour, not a spec requirement:
+        MountainsMap renders BCR-1.0 with the first profile at the maximum
+        y, unlike ISO. sdfio matches that on both read and write so files
+        display consistently there; a different tool could in principle
+        disagree.
+        """
+        return self is SdfDialect.BCR_1_0
+
 
 #: Total length in bytes/characters of the file magic (e.g. ``aISO-2.0``):
 #: the a/b prefix plus a dialect value, which are all the same length.

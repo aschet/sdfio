@@ -238,6 +238,36 @@ def test_roundtrip_bcr_dialect() -> None:
     np.testing.assert_allclose(read_data, data, rtol=1e-6, atol=1e-9)
 
 
+def test_dump_reverses_profile_order_for_bcr_on_disk() -> None:
+    # Each row has a distinct value so the on-disk row order is directly
+    # observable, independent of the dialect-aware unflipping load() does.
+    data = np.array([[0.0], [1.0], [2.0], [3.0]])
+    iso_header = _make_header(
+        dialect=SdfDialect.ISO_1_0, data_type=7, num_points=1, num_profiles=4, z_scale=1.0
+    )
+    bcr_header = _make_header(
+        dialect=SdfDialect.BCR_1_0, data_type=7, num_points=1, num_profiles=4, z_scale=1.0
+    )
+
+    iso_blob = _binary.dumps(iso_header, data)
+    bcr_blob = _binary.dumps(bcr_header, data)
+
+    iso_on_disk = np.frombuffer(
+        iso_blob[_binary.HEADER_SIZE[SdfDialect.ISO_1_0] :], dtype="<f8", count=4
+    )
+    bcr_on_disk = np.frombuffer(
+        bcr_blob[_binary.HEADER_SIZE[SdfDialect.BCR_1_0] :], dtype="<f8", count=4
+    )
+    np.testing.assert_array_equal(iso_on_disk, [0.0, 1.0, 2.0, 3.0])
+    np.testing.assert_array_equal(bcr_on_disk, [3.0, 2.0, 1.0, 0.0])
+
+    # But reading either back gives the same logical (row 0 = y=0) array.
+    _iso_header, iso_read_data, _t = _binary.loads(iso_blob)
+    _bcr_header, bcr_read_data, _t = _binary.loads(bcr_blob)
+    np.testing.assert_array_equal(iso_read_data, data)
+    np.testing.assert_array_equal(bcr_read_data, data)
+
+
 def test_roundtrip_none_dates() -> None:
     header = _make_header(num_points=1, num_profiles=1, create_date=None, mod_date=None)
     buffer = io.BytesIO()

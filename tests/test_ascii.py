@@ -283,6 +283,33 @@ def test_dumps_loads_roundtrip_bcr_dialect() -> None:
     np.testing.assert_allclose(round_tripped_data, data, rtol=1e-6)
 
 
+def test_dumps_reverses_profile_order_for_bcr_on_disk() -> None:
+    # Each row has a distinct value so the on-disk row order is directly
+    # observable, independent of the dialect-aware unflipping loads() does.
+    data = np.array([[0.0], [1.0], [2.0], [3.0]])
+    iso_header = SdfHeader(
+        dialect=SdfDialect.ISO_1_0, num_points=1, num_profiles=4, z_scale=1.0, data_type=7
+    )
+    bcr_header = SdfHeader(
+        dialect=SdfDialect.BCR_1_0, num_points=1, num_profiles=4, z_scale=1.0, data_type=7
+    )
+
+    iso_text = _ascii.dumps(iso_header, data)
+    bcr_text = _ascii.dumps(bcr_header, data)
+
+    def data_values(text: str) -> list[float]:
+        return [float(line) for line in text.splitlines()[14:18]]
+
+    assert data_values(iso_text) == [0.0, 1.0, 2.0, 3.0]
+    assert data_values(bcr_text) == [3.0, 2.0, 1.0, 0.0]
+
+    # But reading either back gives the same logical (row 0 = y=0) array.
+    _iso_header, iso_read_data, _t = _ascii.loads(iso_text)
+    _bcr_header, bcr_read_data, _t = _ascii.loads(bcr_text)
+    np.testing.assert_array_equal(iso_read_data, data)
+    np.testing.assert_array_equal(bcr_read_data, data)
+
+
 def test_dumps_loads_roundtrip_none_dates() -> None:
     header = SdfHeader(num_points=1, num_profiles=1, data_type=7, create_date=None, mod_date=None)
     text = _ascii.dumps(header, np.zeros((1, 1)))

@@ -58,6 +58,12 @@ def test_header_magic_bcr() -> None:
     assert header.magic == "bBCR-1.0"
 
 
+def test_reverses_profile_order_is_bcr_only() -> None:
+    assert SdfDialect.BCR_1_0.reverses_profile_order is True
+    assert SdfDialect.ISO_1_0.reverses_profile_order is False
+    assert SdfDialect.ISO_2_0.reverses_profile_order is False
+
+
 def test_header_shape() -> None:
     header = SdfHeader(num_points=5, num_profiles=3)
     assert header.shape == (3, 5)

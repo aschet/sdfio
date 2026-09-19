@@ -134,6 +134,8 @@ def load(fp: IO[bytes]) -> tuple[SdfHeader, np.ndarray, bytes]:
     data = decode_raw(raw, data_type, header.z_scale, dialect).reshape(
         header.num_profiles, header.num_points
     )
+    if dialect.reverses_profile_order:
+        data = data[::-1]
 
     trailer = fp.read()
     validate_trailer_ascii(trailer)
@@ -186,7 +188,8 @@ def dump(header: SdfHeader, data: np.ndarray, fp: IO[bytes], trailer: bytes = b"
         )
     )
 
-    raw = encode_raw(data, data_type, header.z_scale, header.dialect)
+    write_data = data[::-1] if header.dialect.reverses_profile_order else data
+    raw = encode_raw(write_data, data_type, header.z_scale, header.dialect)
     fp.write(raw.tobytes())
 
     if trailer:
