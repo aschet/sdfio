@@ -18,6 +18,7 @@ from .exceptions import SdfFormatError, SdfVersionError
 __all__ = [
     "ASCII_PREFIX",
     "BINARY_PREFIX",
+    "MAGICS",
     "MAGIC_SIZE",
     "DataType",
     "SdfDialect",
@@ -128,6 +129,13 @@ class SdfDialect(StrEnum):
 #: Total length in bytes/characters of the file magic (e.g. ``aISO-2.0``):
 #: the a/b prefix plus a dialect value, which are all the same length.
 MAGIC_SIZE = len(ASCII_PREFIX) + len(SdfDialect.ISO_2_0)
+
+#: Every file magic sdfio can read, as bytes, e.g. for magic-sniffing file type detection.
+MAGICS = tuple(
+    f"{prefix}{dialect}".encode("ascii")
+    for prefix in (ASCII_PREFIX, BINARY_PREFIX)
+    for dialect in SdfDialect
+)
 
 
 class DataType(IntEnum):

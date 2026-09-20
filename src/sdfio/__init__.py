@@ -38,10 +38,11 @@ from .datatypes import (
 )
 from .exceptions import SdfError, SdfFormatError, SdfVersionError
 from .file import FileFormat, SdfFile, read, write
-from .header import SdfDialect, SdfHeader, SdfMetadata
+from .header import MAGICS, SdfDialect, SdfHeader, SdfMetadata
 
 __all__ = [
     "DATA_TYPES",
+    "MAGICS",
     "DataType",
     "FileFormat",
     "SdfDataType",
@@ -61,4 +62,4 @@ __all__ = [
     "write",
 ]
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"

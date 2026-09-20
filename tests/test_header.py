@@ -9,7 +9,7 @@ from datetime import UTC, datetime, timedelta, timezone
 import pytest
 
 from sdfio.exceptions import SdfFormatError, SdfVersionError
-from sdfio.header import SdfDialect, SdfHeader, format_sdf_datetime, parse_sdf_datetime
+from sdfio.header import MAGICS, SdfDialect, SdfHeader, format_sdf_datetime, parse_sdf_datetime
 
 
 def test_datetime_roundtrip() -> None:
@@ -56,6 +56,17 @@ def test_header_magic() -> None:
 def test_header_magic_bcr() -> None:
     header = SdfHeader(dialect=SdfDialect.BCR_1_0, binary=True)
     assert header.magic == "bBCR-1.0"
+
+
+def test_magics_covers_every_dialect_in_both_formats() -> None:
+    assert MAGICS == (
+        b"aISO-1.0",
+        b"aISO-2.0",
+        b"aBCR-1.0",
+        b"bISO-1.0",
+        b"bISO-2.0",
+        b"bBCR-1.0",
+    )
 
 
 def test_reverses_profile_order_is_bcr_only() -> None:
