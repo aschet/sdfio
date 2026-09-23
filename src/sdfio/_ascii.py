@@ -266,7 +266,11 @@ def dumps(header: SdfHeader, data: np.ndarray, trailer: str = "") -> str:
     # actual trailer whose content happens to be empty by record position,
     # not by counting "*" markers.
     if trailer:
-        lines.append(trailer)
+        # trailer may already end in its own line terminator (e.g. built via
+        # format_tagged_fields(), which CRLF-terminates every field). Strip
+        # it so the "\r\n".join() below doesn't add a second one, producing
+        # a blank line before the closing "*".
+        lines.append(trailer.removesuffix("\r\n").removesuffix("\n"))
     lines.append("*")
     return "\r\n".join(lines) + "\r\n"
 
