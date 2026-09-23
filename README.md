@@ -50,12 +50,23 @@ Non-measured or spurious points (the `BAD` marker in ASCII files, or the
 data type's reserved sentinel value in binary files) are represented as
 `NaN` in `sdf.data`, and `sdfio.write` writes `NaN` values back the same way.
 
+The trailer (record 3) holds free-form historical information, such as an
+operator name; ISO-2.0 requires it to use the same tagged `Name = Value`
+format as the header, which other dialects don't. `sdf.trailer_fields` reads
+and writes it as a dict in that format either way:
+
+```python
+sdf = sdfio.read("surface.sdf")
+sdf.trailer_fields = {"OperatorName": "WG 16"}
+print(sdf.trailer_fields)
+```
+
 ## Command Line
 
 ```bash
 sdfio info surface.sdf
 sdfio convert -f ascii surface.sdf surface_ascii.sdf
-sdfio convert -d ISO-1.0 -r surface_v2.sdf surface_v1.sdf
+sdfio convert -d ISO-2.0 -x surface_v1.sdf surface_v2.sdf
 sdfio convert -t int16 surface.sdf surface_int16.sdf
 ```
 
@@ -63,9 +74,9 @@ sdfio convert -t int16 surface.sdf surface_int16.sdf
 dialect and version (`-d`/`--dialect`, e.g. `ISO-2.0` or `BCR-1.0`), and the
 data area storage type (`-t`/`--type`) independently; any not given are kept
 from the source file. Converting to a dialect whose trailer requirements the
-source file doesn't meet fails unless `-r`/`--remove-trailer` is passed to
-discard it. Run `sdfio convert --help` for details. The CLI is also runnable
-as `python -m sdfio`.
+source file doesn't meet fails unless `-x`/`--fix-trailer` is passed to clean
+it up instead. Run `sdfio convert --help` for details. The CLI is also
+runnable as `python -m sdfio`.
 
 ## Development
 
@@ -82,6 +93,6 @@ pip-audit
 ## References
 
 - ISO 25178-71:2026, *Geometrical product specifications (GPS) — Surface
-  texture: Areal — Part 71: SDF file format*
+  texture: Areal — Part 71: Surface data file (SDF) file format*
 - K. J. Stout et al., *The Development of Methods for the Characterisation of
   Roughness in Three Dimensions*, EUR 15178 EN, EC Brussels, 1993

@@ -5,8 +5,8 @@
 """sdfio: read and write ISO 25178-71 SDF surface data files.
 
 The Surface Data File (SDF) format is defined by ISO 25178-71, "Geometrical
-product specifications (GPS) -- Surface texture: Areal -- Part 71: Software
-measurement standards". It stores areal (or profile) surface topography
+product specifications (GPS) -- Surface texture: Areal -- Part 71: Surface
+data file (SDF) file format". It stores areal (or profile) surface topography
 measurements as a rectangular grid of height values, in either a
 human-readable ASCII or a compact binary format.
 
@@ -38,7 +38,17 @@ from .datatypes import (
 )
 from .exceptions import SdfError, SdfFormatError, SdfVersionError
 from .file import FileFormat, SdfFile, read, write
-from .header import MAGICS, SdfDialect, SdfHeader, SdfMetadata
+from .header import (
+    MAGICS,
+    SdfDialect,
+    SdfHeader,
+    SdfMetadata,
+    format_tagged_fields,
+    parse_tagged_fields,
+    sanitize_tagged_fields,
+    validate_trailer_ascii,
+    validate_trailer_tagged,
+)
 
 __all__ = [
     "DATA_TYPES",
@@ -56,9 +66,14 @@ __all__ = [
     "__version__",
     "decode_raw",
     "encode_raw",
+    "format_tagged_fields",
     "get_data_type",
+    "parse_tagged_fields",
     "read",
+    "sanitize_tagged_fields",
     "suggest_z_scale",
+    "validate_trailer_ascii",
+    "validate_trailer_tagged",
     "write",
 ]
 

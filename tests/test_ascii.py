@@ -129,7 +129,7 @@ def test_loads_rejects_missing_newline() -> None:
 
 def test_loads_rejects_malformed_header_line() -> None:
     bad = ISO_ANNEX_A_EXAMPLE.replace("ManufacID = ISOTC213", "ManufacID ISOTC213")
-    with pytest.raises(SdfFormatError, match="Malformed SDF header line"):
+    with pytest.raises(SdfFormatError, match="Malformed SDF tagged field line"):
         _ascii.loads(bad)
 
 
@@ -178,8 +178,13 @@ def test_dumps_rejects_sentinel_collision() -> None:
 
 def test_dumps_rejects_malformed_v2_trailer() -> None:
     header = SdfHeader(dialect=SdfDialect.ISO_2_0, num_points=1, num_profiles=1, data_type=7)
-    with pytest.raises(SdfFormatError, match="must be well-formed XML"):
-        _ascii.dumps(header, np.zeros((1, 1)), trailer="not xml")
+    with pytest.raises(SdfFormatError, match="tagged 'Name = Value' format"):
+        _ascii.dumps(header, np.zeros((1, 1)), trailer="not tagged fields")
+
+
+def test_dumps_allows_tagged_v2_trailer() -> None:
+    header = SdfHeader(dialect=SdfDialect.ISO_2_0, num_points=1, num_profiles=1, data_type=7)
+    _ascii.dumps(header, np.zeros((1, 1)), trailer="Note = hello")
 
 
 def test_dumps_allows_empty_v2_trailer() -> None:
@@ -214,7 +219,8 @@ def test_dumps_rejects_non_ascii_manufacturer_id() -> None:
         _ascii.dumps(header, np.zeros((1, 1)))
 
 
-def test_loads_rejects_non_ascii_trailer() -> None:
+def test_loads_returns_non_ascii_trailer_as_is() -> None:
+    """A non-compliant trailer must not prevent reading the (already-parsed) depth data."""
     header = SdfHeader(num_points=1, num_profiles=1, data_type=7)
     # dumps() itself always terminates the (here, empty) trailer; replace
     # that terminator to simulate a non-compliant trailer added after the fact.
@@ -222,8 +228,10 @@ def test_loads_rejects_non_ascii_trailer() -> None:
     assert text.endswith("*\r\n")
     text = text[: -len("*\r\n")] + "Müller café\r\n*\r\n"
 
-    with pytest.raises(SdfFormatError, match="must be 7-bit ASCII"):
-        _ascii.loads(text)
+    _, data, trailer = _ascii.loads(text)
+
+    np.testing.assert_array_equal(data, np.zeros((1, 1)))
+    assert trailer == "Müller café"
 
 
 def test_dumps_roundtrips_loads() -> None:

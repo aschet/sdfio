@@ -26,7 +26,7 @@ from .header import (
     validate_compression,
     validate_manufacturer_id_ascii,
     validate_trailer_ascii,
-    validate_trailer_xml,
+    validate_trailer_tagged,
     validate_z_scale,
 )
 
@@ -70,8 +70,9 @@ def load(fp: IO[bytes]) -> tuple[SdfHeader, np.ndarray, bytes]:
         ``(num_profiles, num_points)`` array of height values in metres,
         with ``NaN`` marking non-measured or spurious points.
     :raises SdfFormatError: If the file is malformed, e.g. a bad magic,
-        unsupported dialect or data type, wrong data length, or a trailer
-        that isn't 7-bit ASCII.
+        unsupported dialect or data type, or wrong data length. The trailer
+        is not validated on read; it is returned as-is even if not 7-bit
+        ASCII.
     """
     magic = fp.read(MAGIC_SIZE)
     if len(magic) != MAGIC_SIZE:
@@ -137,8 +138,11 @@ def load(fp: IO[bytes]) -> tuple[SdfHeader, np.ndarray, bytes]:
     if dialect.reverses_profile_order:
         data = data[::-1]
 
+    # Not validated on read, unlike on write: the trailer is secondary to
+    # the header/data area, and a non-compliant trailer in an otherwise
+    # valid file shouldn't prevent reading the (already successfully
+    # decoded) depth data.
     trailer = fp.read()
-    validate_trailer_ascii(trailer)
     return header, data, trailer
 
 
@@ -157,7 +161,7 @@ def dump(header: SdfHeader, data: np.ndarray, fp: IO[bytes], trailer: bytes = b"
     validate_z_scale(header.z_scale)
     validate_manufacturer_id_ascii(header.manufacturer_id)
     validate_trailer_ascii(trailer)
-    validate_trailer_xml(header.dialect, trailer)
+    validate_trailer_tagged(header.dialect, trailer)
     data_type = require_supported_data_type(header.data_type, header.dialect)
 
     fp.write(f"{BINARY_PREFIX}{header.dialect}".encode("ascii"))

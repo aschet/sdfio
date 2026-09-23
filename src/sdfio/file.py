@@ -7,17 +7,15 @@
 from __future__ import annotations
 
 import os
-
-# Only Element/tostring are used from here, not parsing (see trailer_xml).
-import xml.etree.ElementTree as ET  # nosec B405
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from enum import Enum, auto
 from pathlib import Path
+from types import MappingProxyType
 from typing import IO, Literal
 
 import numpy as np
-from defusedxml.ElementTree import fromstring
 
 from . import _ascii, _binary
 from .datatypes import DataType, encode_raw, get_data_type, suggest_z_scale
@@ -29,7 +27,10 @@ from .header import (
     SdfDialect,
     SdfHeader,
     SdfMetadata,
-    validate_trailer_xml,
+    format_tagged_fields,
+    parse_tagged_fields,
+    sanitize_tagged_fields,
+    validate_trailer_tagged,
 )
 
 __all__ = ["FileFormat", "SdfFile", "read", "write"]
@@ -80,10 +81,10 @@ class SdfFile:
         """X-axis coordinates in metres: ``x_j = (j - 1) * x_scale``, ``j = 1..num_points``.
 
         ``num_points`` (not ``num_profiles``) is the correct length here, per
-        the standard's own coordinate formula and its illustrating figure --
-        a separate sentence elsewhere in the standard states the opposite
-        pairing, but the formula and figure agree with each other and
-        contradict that sentence, which is the more likely drafting error.
+        the standard's own coordinate formula and its illustrating figure.
+        The current edition has a separate sentence elsewhere that states the
+        opposite pairing, contradicting the formula and figure; a later
+        edition fixes that sentence to agree with the formula instead.
         """
         return np.arange(self.header.num_points) * self.header.x_scale
 
@@ -134,11 +135,11 @@ class SdfFile:
           ``binary32``/``int8`` are ISO-2.0 only; BCR has no such
           restriction). Pass a compatible replacement if the current type
           isn't valid for ``dialect``.
-        - Trailer: a dialect for which :attr:`SdfDialect.requires_xml_trailer`
-          is ``True`` requires a well-formed XML trailer, or none at all;
-          others have no such requirement. If the current trailer wouldn't
-          be valid for ``dialect``, pass a replacement (e.g. ``""`` to drop
-          it).
+        - Trailer: a dialect for which :attr:`SdfDialect.requires_tagged_trailer`
+          is ``True`` requires a tagged "Name = Value" trailer, or none at
+          all; others have no such requirement. If the current trailer
+          wouldn't be valid for ``dialect``, pass a replacement (e.g. ``""``
+          to drop it).
 
         Timestamps need no such parameter: ``create_date``/``mod_date`` are
         converted to ``dialect``'s timezone convention automatically (UTC if
@@ -149,8 +150,8 @@ class SdfFile:
         originally written in -- see :func:`sdfio.header.parse_sdf_datetime`
         for why.
 
-        :raises SdfFormatError: If ``data_type`` isn't valid for
-            ``dialect``, or the trailer isn't valid for ``dialect``.
+        :raises SdfFormatError: If ``data_type`` isn't valid for ``dialect``,
+            or the trailer isn't valid for ``dialect``.
 
         Converting to a different dialect::
 
@@ -193,7 +194,7 @@ class SdfFile:
                 mod_date = mod_date.astimezone(UTC)
 
         new_trailer = self.trailer if trailer is None else trailer
-        validate_trailer_xml(dialect, new_trailer)
+        validate_trailer_tagged(dialect, new_trailer)
 
         new_header = replace(
             self.header,
@@ -221,37 +222,37 @@ class SdfFile:
         return encode_raw(self.data, data_type, self.header.z_scale, self.header.dialect)
 
     @property
-    def trailer_xml(self) -> ET.Element:
-        """Trailer content parsed as a well-formed XML document.
+    def trailer_fields(self) -> Mapping[str, str]:
+        """Trailer content as "Name = Value" fields, the tagged format the header uses.
 
-        The XML format is mandated for a dialect whose
-        :attr:`~sdfio.SdfDialect.requires_xml_trailer` is ``True`` (no
-        element schema is specified); it is not required for other dialects,
-        but is nonetheless commonly used there too. Parsing is hardened
-        against entity-expansion attacks (``defusedxml``).
+        Required on write for a dialect whose
+        :attr:`SdfDialect.requires_tagged_trailer` is ``True`` (ISO-2.0);
+        optional elsewhere.
 
-        :raises xml.etree.ElementTree.ParseError: If ``trailer`` is not
-            well-formed XML.
-        :raises defusedxml.common.DefusedXmlException: If ``trailer`` uses
-            DTDs or entities, which are rejected outright rather than
-            expanded.
+        Never raises: a line that isn't "Name = Value" is silently dropped
+        (see :func:`sdfio.header.sanitize_tagged_fields`). Use
+        :func:`sdfio.header.parse_tagged_fields` directly to detect a
+        malformed trailer instead.
 
-        >>> import xml.etree.ElementTree as ET
+        A read-only, freshly-parsed snapshot, not a live view -- mutating it
+        in place raises ``TypeError``; assign the whole property to change
+        the trailer (``sdf.trailer_fields = {**sdf.trailer_fields, "X": "Y"}``).
+
         >>> import numpy as np
         >>> from sdfio import SdfFile, SdfHeader
         >>> sdf = SdfFile(header=SdfHeader(), data=np.zeros((1, 1)))
-        >>> sdf.trailer_xml = ET.Element("note", attrib={"author": "sdfio"})
-        >>> sdf.trailer_xml.tag
-        'note'
-        >>> sdf.trailer_xml.get("author")
-        'sdfio'
+        >>> sdf.trailer_fields = {"OperatorName": "WG 16"}
+        >>> sdf.trailer_fields
+        mappingproxy({'OperatorName': 'WG 16'})
         """
-        return fromstring(_as_text(self.trailer))
+        # sanitize_tagged_fields() already guarantees clean "Name = Value"
+        # text, so parse_tagged_fields() here can never raise.
+        sanitized = sanitize_tagged_fields(_as_text(self.trailer))
+        return MappingProxyType(parse_tagged_fields(sanitized))
 
-    @trailer_xml.setter
-    def trailer_xml(self, root: ET.Element) -> None:
-        body = ET.tostring(root, encoding="unicode")
-        self.trailer = f'<?xml version="1.0" encoding="UTF-8"?>\r\n{body}'
+    @trailer_fields.setter
+    def trailer_fields(self, fields: Mapping[str, str]) -> None:
+        self.trailer = format_tagged_fields(fields)
 
     @classmethod
     def loads(cls, data: bytes) -> SdfFile:
@@ -331,10 +332,9 @@ def _write_bytes(destination: PathOrStream, data: bytes) -> None:
 
 
 def _as_bytes(trailer: str | bytes) -> bytes:
-    # A lossless str<->bytes bridge only -- used for both writing (where
-    # validate_trailer_ascii() in _ascii.py/_binary.py enforces the SDF
-    # trailer's ASCII-only requirement) and reading back an already-loaded
-    # trailer (trailer_xml getter), which stays lenient by design.
+    # A lossless str<->bytes bridge only -- validate_trailer_ascii() in
+    # _ascii.py/_binary.py enforces the SDF trailer's ASCII-only requirement
+    # when writing; this itself stays lenient by design.
     return trailer if isinstance(trailer, bytes) else trailer.encode("utf-8")
 
 
@@ -395,9 +395,9 @@ def write(
         ``metadata.data_type`` is invalid or unsupported for
         ``metadata.dialect``, ``metadata``'s timestamps aren't UTC-aware for
         a dialect that requires it, ``trailer`` isn't 7-bit ASCII, a
-        non-empty ``trailer`` isn't well-formed XML for a dialect that
-        requires it, or ``data`` does not fit ``metadata.data_type`` without
-        overflow.
+        non-empty ``trailer`` isn't in the tagged "Name = Value" format for a
+        dialect that requires it, or ``data`` does not fit
+        ``metadata.data_type`` without overflow.
 
     ``path`` also accepts an open binary stream, e.g. to avoid touching disk::
 

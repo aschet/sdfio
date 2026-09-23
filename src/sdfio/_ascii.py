@@ -22,11 +22,12 @@ from .header import (
     SdfHeader,
     format_sdf_datetime,
     parse_sdf_datetime,
+    parse_tagged_fields,
     validate_check_type,
     validate_compression,
     validate_manufacturer_id_ascii,
     validate_trailer_ascii,
-    validate_trailer_xml,
+    validate_trailer_tagged,
     validate_z_scale,
 )
 
@@ -35,7 +36,6 @@ __all__ = ["dump", "dumps", "load", "loads"]
 _MAGIC_RE = re.compile(
     rf"^(?P<prefix>[{ASCII_PREFIX}{BINARY_PREFIX}])(?P<dialect>[A-Z]{{3}})-(?P<version>\d\.\d)$"
 )
-_FIELD_RE = re.compile(r"^(?P<name>\w+)\s*=\s*(?P<value>.*)$")
 _INVALID_MARKER = "BAD"
 # The standard mandates <CRLF> line endings; dumps() always writes them.
 # \r? here is a read-side leniency to also accept bare LF.
@@ -67,19 +67,6 @@ def _split_records(remainder: str) -> list[str]:
             current.append(line)
     records.append("\n".join(current))
     return records
-
-
-def _read_fields(header_text: str) -> dict[str, str]:
-    fields: dict[str, str] = {}
-    for raw_line in header_text.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        match = _FIELD_RE.match(line)
-        if not match:
-            raise SdfFormatError(f"Malformed SDF header line: {line!r}")
-        fields[match.group("name")] = match.group("value").strip()
-    return fields
 
 
 def _field(fields: Mapping[str, str], name: str) -> str:
@@ -117,8 +104,10 @@ def loads(text: str) -> tuple[SdfHeader, np.ndarray, str]:
         ``(num_profiles, num_points)`` array of height values in metres,
         with ``NaN`` marking non-measured or spurious points.
     :raises SdfFormatError: If the file is malformed, e.g. a bad magic,
-        unsupported dialect or data type, missing records, or a trailer
-        that isn't 7-bit ASCII.
+        unsupported dialect or data type, or missing records. The trailer is
+        not validated on read; it is returned as-is even if not 7-bit ASCII
+        (any non-ASCII byte was already replaced during decoding, per
+        ``errors="replace"`` in :meth:`SdfFile.loads`).
     """
     text = text.lstrip("\ufeff")
     first_newline = re.search(r"\r?\n", text)
@@ -146,7 +135,7 @@ def loads(text: str) -> tuple[SdfHeader, np.ndarray, str]:
         trailer_parts = trailer_parts[:-1]
     trailer_text = "*".join(trailer_parts)
 
-    fields = _read_fields(header_text)
+    fields = parse_tagged_fields(header_text)
     data_type_code = _parse_int(fields, "DataType")
     data_type = require_supported_data_type(data_type_code, dialect)
     validate_compression(_parse_int(fields, "Compression"))
@@ -168,8 +157,11 @@ def loads(text: str) -> tuple[SdfHeader, np.ndarray, str]:
     )
 
     data = _parse_data(data_text, header, data_type)
+    # Not validated on read, unlike on write: the trailer is secondary to
+    # the header/data area, and a non-compliant trailer in an otherwise
+    # valid file shouldn't prevent reading the (already successfully
+    # parsed) depth data.
     trailer = trailer_text.strip()
-    validate_trailer_ascii(trailer)
     return header, data, trailer
 
 
@@ -239,7 +231,7 @@ def dumps(header: SdfHeader, data: np.ndarray, trailer: str = "") -> str:
     validate_z_scale(header.z_scale)
     validate_manufacturer_id_ascii(header.manufacturer_id)
     validate_trailer_ascii(trailer)
-    validate_trailer_xml(header.dialect, trailer)
+    validate_trailer_tagged(header.dialect, trailer)
     data_type = require_supported_data_type(header.data_type, header.dialect)
 
     lines = [f"{ASCII_PREFIX}{header.dialect}"]

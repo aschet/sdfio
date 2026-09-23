@@ -6,12 +6,11 @@
 
 from __future__ import annotations
 
+import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from enum import IntEnum, StrEnum
-
-from defusedxml.common import DefusedXmlException
-from defusedxml.ElementTree import ParseError, fromstring
 
 from .exceptions import SdfFormatError, SdfVersionError
 
@@ -25,12 +24,15 @@ __all__ = [
     "SdfHeader",
     "SdfMetadata",
     "format_sdf_datetime",
+    "format_tagged_fields",
     "parse_sdf_datetime",
+    "parse_tagged_fields",
+    "sanitize_tagged_fields",
     "validate_check_type",
     "validate_compression",
     "validate_manufacturer_id_ascii",
     "validate_trailer_ascii",
-    "validate_trailer_xml",
+    "validate_trailer_tagged",
     "validate_z_scale",
 ]
 
@@ -86,12 +88,13 @@ class SdfDialect(StrEnum):
         return self is SdfDialect.ISO_2_0
 
     @property
-    def requires_xml_trailer(self) -> bool:
-        """Whether a non-empty trailer must be well-formed XML.
+    def requires_tagged_trailer(self) -> bool:
+        """Whether a non-empty trailer written on disk must use the tagged ``Name = Value`` format.
 
-        True only for :attr:`ISO_2_0`. Kept separate from :attr:`requires_utc`
-        even though they coincide today -- these are independent facts about
-        the spec (timestamp timezone vs. trailer encoding), not one rule.
+        True only for :attr:`ISO_2_0` -- the same format the header itself
+        uses (see :func:`parse_tagged_fields`). Enforced on write only: a
+        file that already has a non-conforming trailer can still be read,
+        see :func:`validate_trailer_tagged`.
         """
         return self is SdfDialect.ISO_2_0
 
@@ -218,34 +221,91 @@ def parse_sdf_datetime(value: str, dialect: SdfDialect | None = None) -> datetim
     )
 
 
-def validate_trailer_xml(dialect: SdfDialect, trailer: str | bytes) -> None:
-    """Reject a non-empty trailer that isn't well-formed XML, for dialects that require it.
+#: Matches one "Name = Value" line of the tagged field format the header uses.
+#: Field names are not case-sensitive; the value is everything after "=",
+#: trimmed by the caller.
+_TAGGED_FIELD_RE = re.compile(r"^(?P<name>\w+)\s*=\s*(?P<value>.*)$")
 
-    An empty ``trailer`` is always accepted (the trailer is optional), and a
-    dialect for which :attr:`SdfDialect.requires_xml_trailer` is ``False``
-    has no format requirement for the trailer.
 
-    Parsing is hardened against entity-expansion attacks (``defusedxml``),
-    since this runs on every file read/converted for a dialect that requires
-    it, and callers have no way to substitute their own parser for it.
+def _iter_tagged_fields(text: str, *, strict: bool) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        match = _TAGGED_FIELD_RE.match(line)
+        if not match:
+            if strict:
+                raise SdfFormatError(f"Malformed SDF tagged field line: {line!r}")
+            continue
+        fields[match.group("name")] = match.group("value").strip()
+    return fields
 
-    :raises SdfFormatError: If ``dialect.requires_xml_trailer``, ``trailer``
-        is non-empty, and it is not well-formed XML (or uses DTDs/entities,
-        which are rejected outright rather than expanded).
+
+def parse_tagged_fields(text: str) -> dict[str, str]:
+    """Parse "Name = Value" lines into a ``{name: value}`` dict.
+
+    This is the tagged field format the SDF header uses, and that a dialect
+    for which :attr:`SdfDialect.requires_tagged_trailer` is ``True`` also
+    requires for the trailer on write (see :func:`validate_trailer_tagged`).
+    Blank lines are skipped; field names are kept exactly as written
+    (callers needing a case-insensitive lookup should match keys
+    case-insensitively themselves).
+
+    :raises SdfFormatError: If a non-blank line doesn't match "Name = Value".
     """
-    if not dialect.requires_xml_trailer or not trailer:
+    return _iter_tagged_fields(text, strict=True)
+
+
+def format_tagged_fields(fields: Mapping[str, str]) -> str:
+    """Format a ``{name: value}`` mapping as ``<CRLF>``-terminated "Name = Value" lines."""
+    return "".join(f"{name} = {value}\r\n" for name, value in fields.items())
+
+
+def sanitize_tagged_fields(text: str) -> str:
+    """Reformat ``text``, keeping only lines that already match "Name = Value".
+
+    Unlike :func:`parse_tagged_fields`, this never raises: a non-blank line
+    that doesn't match "Name = Value" is silently dropped instead of
+    rejected. Useful for salvaging a trailer that's mostly, but not fully,
+    in the tagged format (e.g. converting a source file to a dialect that
+    requires it) rather than discarding the whole thing.
+    """
+    return format_tagged_fields(_iter_tagged_fields(text, strict=False))
+
+
+def validate_trailer_tagged(dialect: SdfDialect, trailer: str | bytes) -> None:
+    """Reject a non-empty, non-tagged trailer for a dialect that requires the tagged format.
+
+    Enforced on write only (see :func:`validate_trailer_ascii` for the same
+    read/write split). An empty ``trailer`` is always accepted (the trailer
+    is optional), and a dialect for which
+    :attr:`SdfDialect.requires_tagged_trailer` is ``False`` has no format
+    requirement for the trailer.
+
+    :raises SdfFormatError: If ``dialect.requires_tagged_trailer``, ``trailer``
+        is non-empty, and it is not valid "Name = Value" lines (see
+        :func:`parse_tagged_fields`).
+    """
+    if not dialect.requires_tagged_trailer or not trailer:
         return
+    text = trailer.decode("ascii", errors="replace") if isinstance(trailer, bytes) else trailer
     try:
-        fromstring(trailer)
-    except (ParseError, DefusedXmlException) as error:
-        raise SdfFormatError(f"SDF {dialect} trailer must be well-formed XML: {error}") from error
+        parse_tagged_fields(text)
+    except SdfFormatError as error:
+        raise SdfFormatError(
+            f"SDF {dialect} trailer must use the tagged 'Name = Value' format: {error}"
+        ) from error
 
 
 def validate_trailer_ascii(trailer: str | bytes) -> None:
     """Reject a trailer that is not 7-bit ASCII.
 
     Record 3 (the trailer) is defined as "a sequence of ASCII values",
-    regardless of SDF dialect or ASCII/binary file representation.
+    regardless of SDF dialect or ASCII/binary file representation. Only
+    enforced on write -- a file that already has a non-ASCII trailer can
+    still be read; the trailer is secondary to the header/data area, which
+    is unaffected by it.
 
     :raises SdfFormatError: If ``trailer`` contains any non-ASCII byte or
         character.
@@ -328,8 +388,8 @@ class SdfHeader:
         which :attr:`SdfDialect.requires_utc` is ``True`` requires UTC when set.
     :param mod_date: Last modification date and time, or ``None`` if not
         recorded in the file; same UTC requirement as ``create_date``.
-    :param num_points: Number of columns *N* in the data matrix (x-direction).
-    :param num_profiles: Number of rows *M* in the data matrix (y-direction).
+    :param num_points: Number of columns *M* in the data matrix (x-direction).
+    :param num_profiles: Number of rows *N* in the data matrix (y-direction).
         The standard uses ``1`` here for a profile (as opposed to an areal
         surface) -- in that case ``y_scale`` is meaningless and should be
         ignored.

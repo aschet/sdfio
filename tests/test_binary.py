@@ -45,7 +45,7 @@ def test_roundtrip(dialect: SdfDialect, data_type: int) -> None:
     data = np.array([[1e-6, np.nan, -2e-6], [0.0, 3e-6, 1e-6]])
 
     buffer = io.BytesIO()
-    _binary.dump(header, data, buffer, trailer=b"<Note>hello</Note>")
+    _binary.dump(header, data, buffer, trailer=b"Note = hello")
     buffer.seek(0)
     read_header, read_data, trailer = _binary.load(buffer)
 
@@ -55,7 +55,7 @@ def test_roundtrip(dialect: SdfDialect, data_type: int) -> None:
     assert read_header.num_profiles == 2
     assert read_header.manufacturer_id == "sdfio"
     np.testing.assert_allclose(read_data, data, rtol=1e-6, atol=1e-9, equal_nan=True)
-    assert trailer == b"<Note>hello</Note>"
+    assert trailer == b"Note = hello"
 
 
 @pytest.mark.parametrize("data_type", [3, 4])
@@ -168,8 +168,13 @@ def test_dump_rejects_unsupported_dialect() -> None:
 
 def test_dump_rejects_malformed_v2_trailer() -> None:
     header = _make_header(dialect=SdfDialect.ISO_2_0, num_points=1, num_profiles=1)
-    with pytest.raises(SdfFormatError, match="must be well-formed XML"):
-        _binary.dump(header, np.zeros((1, 1)), io.BytesIO(), trailer=b"not xml")
+    with pytest.raises(SdfFormatError, match="tagged 'Name = Value' format"):
+        _binary.dump(header, np.zeros((1, 1)), io.BytesIO(), trailer=b"not tagged fields")
+
+
+def test_dump_allows_tagged_v2_trailer() -> None:
+    header = _make_header(dialect=SdfDialect.ISO_2_0, num_points=1, num_profiles=1)
+    _binary.dump(header, np.zeros((1, 1)), io.BytesIO(), trailer=b"Note = hello")
 
 
 def test_dump_allows_empty_v2_trailer() -> None:
@@ -189,15 +194,18 @@ def test_dump_rejects_non_ascii_manufacturer_id() -> None:
         _binary.dump(header, np.zeros((1, 1)), io.BytesIO())
 
 
-def test_load_rejects_non_ascii_trailer() -> None:
+def test_load_returns_non_ascii_trailer_as_is() -> None:
+    """A non-compliant trailer must not prevent reading the (already-decoded) depth data."""
     header = _make_header(num_points=1, num_profiles=1)
     buffer = io.BytesIO()
     _binary.dump(header, np.zeros((1, 1)), buffer)
     buffer.write("Müller café".encode())  # append a non-compliant trailer after the fact
     buffer.seek(0)
 
-    with pytest.raises(SdfFormatError, match="must be 7-bit ASCII"):
-        _binary.load(buffer)
+    _, data, trailer = _binary.load(buffer)
+
+    np.testing.assert_array_equal(data, np.zeros((1, 1)))
+    assert trailer == "Müller café".encode()
 
 
 def test_dump_rejects_data_type_invalid_for_dialect() -> None:
@@ -215,13 +223,13 @@ def test_dump_rejects_num_points_exceeding_dialect_width() -> None:
 def test_dumps_loads_roundtrip() -> None:
     header = _make_header(num_points=2, num_profiles=1)
     data = np.array([[1e-6, np.nan]])
-    blob = _binary.dumps(header, data, trailer=b"<a/>")
+    blob = _binary.dumps(header, data, trailer=b"Note = a")
     assert isinstance(blob, bytes)
 
     round_tripped_header, round_tripped_data, trailer = _binary.loads(blob)
 
     assert round_tripped_header.num_points == 2
-    assert trailer == b"<a/>"
+    assert trailer == b"Note = a"
     np.testing.assert_allclose(round_tripped_data, data, equal_nan=True)
 
 

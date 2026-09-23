@@ -62,13 +62,13 @@ def test_cli_info_omits_empty_trailer(tmp_path: Path, capsys: pytest.CaptureFixt
 
 def test_cli_info_prints_trailer(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     path = tmp_path / "surface.sdf"
-    sdfio.write(path, np.zeros((1, 1)), x_scale=1e-6, y_scale=1e-6, trailer="<Note>hi</Note>")
+    sdfio.write(path, np.zeros((1, 1)), x_scale=1e-6, y_scale=1e-6, trailer="Note = hi")
 
     assert main(["info", str(path)]) == 0
 
     output = capsys.readouterr().out
     assert "Trailer " in output
-    assert "<Note>hi</Note>" in output
+    assert "Note = hi" in output
 
 
 def test_cli_info_reports_missing_file_cleanly(
@@ -170,6 +170,25 @@ def test_cli_convert_dialect_rejects_incompatible_data_type(
     assert "not valid for SDF dialect" in capsys.readouterr().err
 
 
+def test_cli_convert_dialect_keeps_already_tagged_trailer_unchanged(tmp_path: Path) -> None:
+    source = tmp_path / "surface.sdf"
+    destination = tmp_path / "converted.sdf"
+    sdfio.write(
+        source,
+        np.ones((2, 2)),
+        x_scale=1e-6,
+        y_scale=1e-6,
+        metadata=sdfio.SdfMetadata(dialect=sdfio.SdfDialect.ISO_1_0),
+        trailer="Operator = Jane Doe",
+    )
+
+    assert main(["convert", str(source), str(destination), "--dialect", "ISO-2.0"]) == 0
+
+    converted = sdfio.read(destination)
+    assert converted.header.dialect == sdfio.SdfDialect.ISO_2_0
+    assert converted.trailer == b"Operator = Jane Doe"
+
+
 def test_cli_convert_dialect_rejects_incompatible_trailer(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
@@ -181,14 +200,14 @@ def test_cli_convert_dialect_rejects_incompatible_trailer(
         x_scale=1e-6,
         y_scale=1e-6,
         metadata=sdfio.SdfMetadata(dialect=sdfio.SdfDialect.ISO_1_0),
-        trailer="Operator = Jane Doe",
+        trailer="not tagged fields",
     )
 
     assert main(["convert", str(source), str(destination), "--dialect", "ISO-2.0"]) == 1
-    assert "must be well-formed XML" in capsys.readouterr().err
+    assert "tagged 'Name = Value' format" in capsys.readouterr().err
 
 
-def test_cli_convert_remove_trailer_allows_incompatible_trailer(tmp_path: Path) -> None:
+def test_cli_convert_fix_trailer_drops_entirely_incompatible_trailer(tmp_path: Path) -> None:
     source = tmp_path / "surface.sdf"
     destination = tmp_path / "converted.sdf"
     sdfio.write(
@@ -197,10 +216,10 @@ def test_cli_convert_remove_trailer_allows_incompatible_trailer(tmp_path: Path) 
         x_scale=1e-6,
         y_scale=1e-6,
         metadata=sdfio.SdfMetadata(dialect=sdfio.SdfDialect.ISO_1_0),
-        trailer="Operator = Jane Doe",
+        trailer="not tagged fields",
     )
 
-    args = ["convert", str(source), str(destination), "--dialect", "ISO-2.0", "--remove-trailer"]
+    args = ["convert", str(source), str(destination), "--dialect", "ISO-2.0", "--fix-trailer"]
     assert main(args) == 0
 
     converted = sdfio.read(destination)
@@ -208,7 +227,32 @@ def test_cli_convert_remove_trailer_allows_incompatible_trailer(tmp_path: Path) 
     assert not converted.trailer
 
 
-def test_cli_convert_remove_trailer_keeps_already_valid_trailer(tmp_path: Path) -> None:
+def test_cli_convert_fix_trailer_replaces_non_ascii_char_for_non_tagged_dialect(
+    tmp_path: Path,
+) -> None:
+    """-x must also catch the universal ASCII rule, not just the dialect-specific tagged format."""
+    source = tmp_path / "surface.sdf"
+    destination = tmp_path / "converted.sdf"
+    sdf = sdfio.SdfFile(
+        header=sdfio.SdfHeader(dialect=sdfio.SdfDialect.ISO_1_0, num_points=1, num_profiles=1),
+        data=np.zeros((1, 1)),
+        trailer=b"Note = X\nAnother line",
+    )
+    raw = bytearray(sdf.dumps())
+    raw[raw.index(b"X")] = 0xE9  # corrupt just the 'X', leaving the rest untouched
+    source.write_bytes(bytes(raw))
+
+    # BCR-1.0 has no tagged-format requirement, so freeform content (like
+    # "Another line", with no "=") must survive; only the ASCII rule applies,
+    # and the bad byte is replaced (not the whole line dropped).
+    args = ["convert", str(source), str(destination), "--dialect", "BCR-1.0", "--fix-trailer"]
+    assert main(args) == 0
+
+    converted = sdfio.read(destination)
+    assert converted.trailer == b"Note = ?\r\nAnother line\r\n"
+
+
+def test_cli_convert_fix_trailer_keeps_only_tagged_lines(tmp_path: Path) -> None:
     source = tmp_path / "surface.sdf"
     destination = tmp_path / "converted.sdf"
     sdfio.write(
@@ -218,14 +262,35 @@ def test_cli_convert_remove_trailer_keeps_already_valid_trailer(tmp_path: Path) 
         y_scale=1e-6,
         format=sdfio.FileFormat.ASCII,
         metadata=sdfio.SdfMetadata(dialect=sdfio.SdfDialect.ISO_1_0),
-        trailer="<Note>keep me</Note>",
+        trailer="OperatorName = WG 16\r\nsome free text without equals\r\nPartName = X",
     )
 
-    args = ["convert", str(source), str(destination), "--dialect", "ISO-2.0", "-r"]
+    args = ["convert", str(source), str(destination), "--dialect", "ISO-2.0", "--fix-trailer"]
     assert main(args) == 0
 
     converted = sdfio.read(destination)
-    assert converted.trailer == "<Note>keep me</Note>"
+    assert converted.header.dialect == sdfio.SdfDialect.ISO_2_0
+    assert converted.trailer_fields == {"OperatorName": "WG 16", "PartName": "X"}
+
+
+def test_cli_convert_fix_trailer_keeps_already_valid_trailer(tmp_path: Path) -> None:
+    source = tmp_path / "surface.sdf"
+    destination = tmp_path / "converted.sdf"
+    sdfio.write(
+        source,
+        np.ones((2, 2)),
+        x_scale=1e-6,
+        y_scale=1e-6,
+        format=sdfio.FileFormat.ASCII,
+        metadata=sdfio.SdfMetadata(dialect=sdfio.SdfDialect.ISO_1_0),
+        trailer="Note = keep me",
+    )
+
+    args = ["convert", str(source), str(destination), "--dialect", "ISO-2.0", "-x"]
+    assert main(args) == 0
+
+    converted = sdfio.read(destination)
+    assert converted.trailer == "Note = keep me"
 
 
 def test_cli_convert_changes_from_bcr_to_iso_2_0(tmp_path: Path) -> None:

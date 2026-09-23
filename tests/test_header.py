@@ -9,7 +9,14 @@ from datetime import UTC, datetime, timedelta, timezone
 import pytest
 
 from sdfio.exceptions import SdfFormatError, SdfVersionError
-from sdfio.header import MAGICS, SdfDialect, SdfHeader, format_sdf_datetime, parse_sdf_datetime
+from sdfio.header import (
+    MAGICS,
+    SdfDialect,
+    SdfHeader,
+    format_sdf_datetime,
+    parse_sdf_datetime,
+    sanitize_tagged_fields,
+)
 
 
 def test_datetime_roundtrip() -> None:
@@ -56,6 +63,16 @@ def test_header_magic() -> None:
 def test_header_magic_bcr() -> None:
     header = SdfHeader(dialect=SdfDialect.BCR_1_0, binary=True)
     assert header.magic == "bBCR-1.0"
+
+
+def test_sanitize_tagged_fields_drops_non_matching_lines() -> None:
+    text = "OperatorName = WG 16\r\nsome free text without equals\r\nPartName = X"
+
+    assert sanitize_tagged_fields(text) == "OperatorName = WG 16\r\nPartName = X\r\n"
+
+
+def test_sanitize_tagged_fields_never_raises_on_fully_malformed_text() -> None:
+    assert sanitize_tagged_fields("just some prose\nwith no tags at all") == ""
 
 
 def test_magics_covers_every_dialect_in_both_formats() -> None:

@@ -14,7 +14,14 @@ from . import __version__
 from .datatypes import DataType
 from .exceptions import SdfError, SdfFormatError
 from .file import FileFormat, read
-from .header import SdfDialect, validate_trailer_xml
+from .header import (
+    SdfDialect,
+    format_tagged_fields,
+    parse_tagged_fields,
+    sanitize_tagged_fields,
+    validate_trailer_ascii,
+    validate_trailer_tagged,
+)
 
 __all__ = ["main"]
 
@@ -65,13 +72,34 @@ def _build_parser() -> argparse.ArgumentParser:
         help="convert the data area storage type",
     )
     convert_parser.add_argument(
-        "-r",
-        "--remove-trailer",
+        "-x",
+        "--fix-trailer",
         action="store_true",
-        help="remove the trailer if it isn't valid for --dialect",
+        help="if the trailer isn't valid for --dialect, fix it instead of failing",
     )
 
     return parser
+
+
+def _ascii_safe(text: str) -> str:
+    # "?" mirrors str.encode(..., errors="replace")'s own substitute for an
+    # unencodable character, the encode-side counterpart to the "�" a
+    # lenient decode (errors="replace") already used to read this text.
+    return "".join(char if char.isascii() else "?" for char in text)
+
+
+def _fix_trailer(text: str, dialect: SdfDialect) -> str:
+    # ISO-2.0 requires the tagged "Name = Value" shape, so salvage by shape
+    # first, then make any surviving field 7-bit ASCII. Other dialects have
+    # no shape requirement at all -- imposing one would destroy legitimate
+    # freeform content, so only ASCII-ness is fixed, line by line.
+    if dialect.requires_tagged_trailer:
+        fields = {
+            _ascii_safe(name): _ascii_safe(value)
+            for name, value in parse_tagged_fields(sanitize_tagged_fields(text)).items()
+        }
+        return format_tagged_fields(fields)
+    return "".join(f"{_ascii_safe(line)}\r\n" for line in text.splitlines())
 
 
 def _print_info(path: str) -> None:
@@ -96,7 +124,9 @@ def _print_info(path: str) -> None:
         print(f"{name:<{width}} = {value}")
     if sdf.trailer:
         trailer = sdf.trailer
-        text = trailer if isinstance(trailer, str) else trailer.decode("ascii")
+        # The trailer isn't validated on read (see validate_trailer_ascii),
+        # so a non-compliant file's trailer might not decode cleanly here.
+        text = trailer if isinstance(trailer, str) else trailer.decode("ascii", errors="replace")
         print(f"{'Trailer':<{width}} =")
         print(text)
 
@@ -118,16 +148,19 @@ def main(argv: Sequence[str] | None = None) -> int:
             data_type = DataType[args.data_type.upper()] if args.data_type is not None else None
             if target_dialect != sdf.header.dialect or data_type is not None:
                 trailer = None
-                if args.remove_trailer:
+                if args.fix_trailer:
                     try:
-                        validate_trailer_xml(target_dialect, sdf.trailer)
+                        validate_trailer_ascii(sdf.trailer)
+                        validate_trailer_tagged(target_dialect, sdf.trailer)
                     except SdfFormatError:
-                        trailer = ""
-                sdf = sdf.with_dialect(
-                    target_dialect,
-                    data_type=data_type,
-                    trailer=trailer,
-                )
+                        source_trailer = sdf.trailer
+                        text = (
+                            source_trailer
+                            if isinstance(source_trailer, str)
+                            else source_trailer.decode("ascii", errors="replace")
+                        )
+                        trailer = _fix_trailer(text, target_dialect)
+                sdf = sdf.with_dialect(target_dialect, data_type=data_type, trailer=trailer)
             file_format = FileFormat[args.format.upper()] if args.format is not None else None
             sdf.save(args.destination, format=file_format)
             return 0

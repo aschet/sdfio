@@ -5,7 +5,6 @@
 from __future__ import annotations
 
 import io
-import xml.etree.ElementTree as ET
 from datetime import UTC, datetime
 from pathlib import Path
 
@@ -89,54 +88,94 @@ def test_write_defaults_to_binary_iso_2_0() -> None:
 
 @pytest.mark.parametrize("file_format", [FileFormat.BINARY, FileFormat.ASCII])
 @pytest.mark.parametrize("dialect", [SdfDialect.ISO_1_0, SdfDialect.ISO_2_0])
-def test_trailer_xml_roundtrip(file_format: FileFormat, dialect: SdfDialect) -> None:
-    # A single well-formed XML document with one root element, as required
-    # for version 2.0 (and commonly used for version 1.0 too).
-    root = ET.Element("Metadata")
-    ET.SubElement(root, "FILENAME").text = "surface.sdf"
-
+def test_trailer_roundtrip(file_format: FileFormat, dialect: SdfDialect) -> None:
+    # Neither dialect imposes a format requirement on the trailer's content,
+    # so arbitrary ASCII text round-trips as-is.
     sdf = sdfio.SdfFile(
         header=sdfio.SdfHeader(
             dialect=dialect, binary=file_format == FileFormat.BINARY, num_points=1, num_profiles=1
         ),
         data=np.zeros((1, 1)),
+        trailer="OperatorName = WG 16",
     )
-    sdf.trailer_xml = root
 
     reloaded = sdfio.SdfFile.loads(sdf.dumps())
-    parsed = reloaded.trailer_xml
-    assert parsed.tag == "Metadata"
-    filename = parsed.find("FILENAME")
-    assert filename is not None
-    assert filename.text == "surface.sdf"
+
+    expected = (
+        b"OperatorName = WG 16" if file_format == FileFormat.BINARY else "OperatorName = WG 16"
+    )
+    assert reloaded.trailer == expected
 
 
 @pytest.mark.parametrize("binary", [True, False])
 def test_dumps_rejects_non_ascii_trailer(binary: bool) -> None:
     """Record 3 (the trailer) is defined as a sequence of ASCII values, for both formats."""
-    root = ET.Element("Metadata")
-    ET.SubElement(root, "Operator").text = "Müller café"
     sdf = sdfio.SdfFile(
         header=sdfio.SdfHeader(binary=binary, num_points=1, num_profiles=1),
         data=np.zeros((1, 1)),
+        trailer="Operator = Müller café",
     )
-    sdf.trailer_xml = root
 
     with pytest.raises(SdfFormatError, match="must be 7-bit ASCII"):
         sdf.dumps()
 
 
-def test_trailer_xml_getter_stays_lenient_on_non_ascii_bytes() -> None:
+@pytest.mark.parametrize("binary", [True, False])
+def test_loads_reads_data_despite_corrupt_trailer(binary: bool) -> None:
+    """A corrupt trailer must not prevent reading the (already-decoded) depth data."""
+    sdf = sdfio.SdfFile(
+        header=sdfio.SdfHeader(binary=binary, num_points=2, num_profiles=2),
+        data=np.zeros((2, 2)),
+        trailer=b"Operator = X" if binary else "Operator = X",
+    )
+    raw = bytearray(sdf.dumps())
+    raw[-1] = 0xE9  # corrupt the last trailer byte to a non-ASCII value
+
+    reloaded = sdfio.SdfFile.loads(bytes(raw))
+
+    np.testing.assert_array_equal(reloaded.data, np.zeros((2, 2)))
+
+
+def test_trailer_fields_roundtrip() -> None:
+    sdf = sdfio.SdfFile(header=sdfio.SdfHeader(num_points=1, num_profiles=1), data=np.zeros((1, 1)))
+
+    sdf.trailer_fields = {"OperatorName": "WG 16", "PartName": "Example"}
+
+    assert sdf.trailer == "OperatorName = WG 16\r\nPartName = Example\r\n"
+    reloaded = sdfio.SdfFile.loads(sdf.dumps())
+    assert reloaded.trailer_fields == {"OperatorName": "WG 16", "PartName": "Example"}
+
+
+def test_trailer_fields_getter_returns_read_only_view() -> None:
+    """Mutating the returned mapping in place must not silently vanish; it must fail loudly."""
+    sdf = sdfio.SdfFile(header=sdfio.SdfHeader(num_points=1, num_profiles=1), data=np.zeros((1, 1)))
+    sdf.trailer_fields = {"OperatorName": "WG 16"}
+
+    with pytest.raises(TypeError):
+        sdf.trailer_fields["PartName"] = "Example"
+
+    assert sdf.trailer_fields == {"OperatorName": "WG 16"}
+
+
+def test_trailer_fields_getter_drops_malformed_lines_instead_of_raising() -> None:
+    """Inspecting the trailer must not fail just because it's malformed."""
+    sdf = sdfio.SdfFile(
+        header=sdfio.SdfHeader(num_points=1, num_profiles=1),
+        data=np.zeros((1, 1)),
+        trailer="OperatorName = WG 16\r\nnot tagged fields\r\nPartName = X",
+    )
+
+    assert sdf.trailer_fields == {"OperatorName": "WG 16", "PartName": "X"}
+
+
+def test_trailer_fields_getter_stays_lenient_on_non_ascii_bytes() -> None:
     """Inspecting an already non-ASCII trailer (e.g. from a non-compliant file) must not raise."""
-    trailer = "<Metadata><Operator>Müller café</Operator></Metadata>".encode()
+    trailer = "Operator = Müller café".encode()
     sdf = sdfio.SdfFile(
         header=sdfio.SdfHeader(num_points=1, num_profiles=1), data=np.zeros((1, 1)), trailer=trailer
     )
 
-    operator = sdf.trailer_xml.find("Operator")
-
-    assert operator is not None
-    assert operator.text == "Müller café"
+    assert sdf.trailer_fields == {"Operator": "Müller café"}
 
 
 def test_write_auto_z_scale_maximizes_resolution() -> None:
@@ -333,7 +372,7 @@ def test_with_dialect_rejects_incompatible_data_type_unless_replaced() -> None:
     assert downgraded.header.data_type == DataType.INT16
 
 
-def test_with_dialect_rejects_non_xml_trailer_unless_replaced() -> None:
+def test_with_dialect_rejects_non_tagged_trailer_unless_replaced() -> None:
     naive_date = datetime(2024, 1, 1, 12, 0)
     sdf = sdfio.SdfFile(
         header=sdfio.SdfHeader(
@@ -344,9 +383,9 @@ def test_with_dialect_rejects_non_xml_trailer_unless_replaced() -> None:
             mod_date=naive_date,
         ),
         data=np.array([[1.0]]),
-        trailer="Operator = Jane Doe",
+        trailer="some freeform notes, not tagged fields",
     )
-    with pytest.raises(SdfFormatError, match="must be well-formed XML"):
+    with pytest.raises(SdfFormatError, match="tagged 'Name = Value' format"):
         sdf.with_dialect(SdfDialect.ISO_2_0)
 
     upgraded = sdf.with_dialect(SdfDialect.ISO_2_0, trailer="")

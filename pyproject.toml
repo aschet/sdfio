@@ -31,7 +31,7 @@ classifiers = [
     "Topic :: Scientific/Engineering",
     "Typing :: Typed",
 ]
-dependencies = ["defusedxml>=0.7", "numpy>=1.24"]
+dependencies = ["numpy>=1.24"]
 
 [project.urls]
 Homepage = "https://github.com/aschet/sdfio"
@@ -55,7 +55,6 @@ dev = [
     "reuse>=5.0",
     "ruff>=0.5",
     "twine>=5.1",
-    "types-defusedxml>=0.7",
     "vulture>=2.11",
 ]
 docs = ["furo>=2024.8", "myst-parser>=4.0", "sphinx>=8.0"]
