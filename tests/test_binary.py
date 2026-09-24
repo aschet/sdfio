@@ -194,6 +194,20 @@ def test_dump_rejects_non_ascii_manufacturer_id() -> None:
         _binary.dump(header, np.zeros((1, 1)), io.BytesIO())
 
 
+def test_load_truncates_manufacturer_id_at_first_nul() -> None:
+    """Some real writers NUL-terminate ManufacID instead of space-padding it; strip past the NUL."""
+    header = _make_header(num_points=1, num_profiles=1)
+    buffer = io.BytesIO()
+    _binary.dump(header, np.zeros((1, 1)), buffer)
+    raw = bytearray(buffer.getvalue())
+    manufacid_offset = raw.index(b"sdfio")
+    raw[manufacid_offset + len(b"sdfio") : manufacid_offset + 10] = b"\x00\x07\x00\x00\x02"
+
+    read_header, _data, _trailer = _binary.load(io.BytesIO(bytes(raw)))
+
+    assert read_header.manufacturer_id == "sdfio"
+
+
 def test_load_returns_non_ascii_trailer_as_is() -> None:
     """A non-compliant trailer must not prevent reading the (already-decoded) depth data."""
     header = _make_header(num_points=1, num_profiles=1)

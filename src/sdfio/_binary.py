@@ -72,7 +72,9 @@ def load(fp: IO[bytes]) -> tuple[SdfHeader, np.ndarray, bytes]:
     :raises SdfFormatError: If the file is malformed, e.g. a bad magic,
         unsupported dialect or data type, or wrong data length. The trailer
         is not validated on read; it is returned as-is even if not 7-bit
-        ASCII.
+        ASCII. ``ManufacID`` is truncated at the first NUL byte, tolerating
+        writers that NUL-terminate it instead of space-padding it as the
+        standard requires.
     """
     magic = fp.read(MAGIC_SIZE)
     if len(magic) != MAGIC_SIZE:
@@ -111,10 +113,16 @@ def load(fp: IO[bytes]) -> tuple[SdfHeader, np.ndarray, bytes]:
     # trailer, ManufacID/dates are not re-validated as ASCII on read) so a
     # file that's merely non-compliant here can still be opened and
     # inspected; only *writing* one is rejected (validate_manufacturer_id_ascii).
+    # ManufacID is truncated at the first NUL byte before decoding: the
+    # standard requires space-padding past the valid content, but some real
+    # writers instead NUL-terminate it and leave whatever was in memory
+    # after that, which would otherwise show up as decode-replacement noise.
     header = SdfHeader(
         dialect=dialect,
         binary=True,
-        manufacturer_id=manufacturer_raw.decode("ascii", errors="replace").rstrip(),
+        manufacturer_id=manufacturer_raw.split(b"\x00", 1)[0]
+        .decode("ascii", errors="replace")
+        .rstrip(),
         create_date=parse_sdf_datetime(create_raw.decode("ascii", errors="replace"), dialect),
         mod_date=parse_sdf_datetime(mod_raw.decode("ascii", errors="replace"), dialect),
         num_points=num_points,

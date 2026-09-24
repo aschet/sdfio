@@ -1,6 +1,11 @@
 version = 1
 
 [[annotations]]
-path = ["README.md"]
+path = ["README.md", "tests/interop_samples/README.md"]
+SPDX-FileCopyrightText = "2026 Thomas Ascher <thomas.ascher@gmx.at>"
+SPDX-License-Identifier = "MIT"
+
+[[annotations]]
+path = ["tests/interop_samples/*.sdf", "tests/interop_samples/*.png"]
 SPDX-FileCopyrightText = "2026 Thomas Ascher <thomas.ascher@gmx.at>"
 SPDX-License-Identifier = "MIT"
