@@ -262,7 +262,7 @@ def test_cli_convert_fix_trailer_keeps_only_tagged_lines(tmp_path: Path) -> None
         y_scale=1e-6,
         format=sdfio.FileFormat.ASCII,
         metadata=sdfio.SdfMetadata(dialect=sdfio.SdfDialect.ISO_1_0),
-        trailer="OperatorName = WG 16\r\nsome free text without equals\r\nPartName = X",
+        trailer="OperatorName = Jane Doe\r\nsome free text without equals\r\nPartName = X",
     )
 
     args = ["convert", str(source), str(destination), "--dialect", "ISO-2.0", "--fix-trailer"]
@@ -270,7 +270,7 @@ def test_cli_convert_fix_trailer_keeps_only_tagged_lines(tmp_path: Path) -> None
 
     converted = sdfio.read(destination)
     assert converted.header.dialect == sdfio.SdfDialect.ISO_2_0
-    assert converted.trailer_fields == {"OperatorName": "WG 16", "PartName": "X"}
+    assert converted.trailer_fields == {"OperatorName": "Jane Doe", "PartName": "X"}
 
 
 def test_cli_convert_fix_trailer_keeps_already_valid_trailer(tmp_path: Path) -> None:

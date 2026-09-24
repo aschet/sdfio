@@ -96,13 +96,15 @@ def test_trailer_roundtrip(file_format: FileFormat, dialect: SdfDialect) -> None
             dialect=dialect, binary=file_format == FileFormat.BINARY, num_points=1, num_profiles=1
         ),
         data=np.zeros((1, 1)),
-        trailer="OperatorName = WG 16",
+        trailer="OperatorName = Jane Doe",
     )
 
     reloaded = sdfio.SdfFile.loads(sdf.dumps())
 
     expected = (
-        b"OperatorName = WG 16" if file_format == FileFormat.BINARY else "OperatorName = WG 16"
+        b"OperatorName = Jane Doe"
+        if file_format == FileFormat.BINARY
+        else "OperatorName = Jane Doe"
     )
     assert reloaded.trailer == expected
 
@@ -139,22 +141,22 @@ def test_loads_reads_data_despite_corrupt_trailer(binary: bool) -> None:
 def test_trailer_fields_roundtrip() -> None:
     sdf = sdfio.SdfFile(header=sdfio.SdfHeader(num_points=1, num_profiles=1), data=np.zeros((1, 1)))
 
-    sdf.trailer_fields = {"OperatorName": "WG 16", "PartName": "Example"}
+    sdf.trailer_fields = {"OperatorName": "Jane Doe", "PartName": "Example"}
 
-    assert sdf.trailer == "OperatorName = WG 16\r\nPartName = Example\r\n"
+    assert sdf.trailer == "OperatorName = Jane Doe\r\nPartName = Example\r\n"
     reloaded = sdfio.SdfFile.loads(sdf.dumps())
-    assert reloaded.trailer_fields == {"OperatorName": "WG 16", "PartName": "Example"}
+    assert reloaded.trailer_fields == {"OperatorName": "Jane Doe", "PartName": "Example"}
 
 
 def test_trailer_fields_getter_returns_read_only_view() -> None:
     """Mutating the returned mapping in place must not silently vanish; it must fail loudly."""
     sdf = sdfio.SdfFile(header=sdfio.SdfHeader(num_points=1, num_profiles=1), data=np.zeros((1, 1)))
-    sdf.trailer_fields = {"OperatorName": "WG 16"}
+    sdf.trailer_fields = {"OperatorName": "Jane Doe"}
 
     with pytest.raises(TypeError):
         sdf.trailer_fields["PartName"] = "Example"
 
-    assert sdf.trailer_fields == {"OperatorName": "WG 16"}
+    assert sdf.trailer_fields == {"OperatorName": "Jane Doe"}
 
 
 def test_trailer_fields_getter_drops_malformed_lines_instead_of_raising() -> None:
@@ -162,10 +164,10 @@ def test_trailer_fields_getter_drops_malformed_lines_instead_of_raising() -> Non
     sdf = sdfio.SdfFile(
         header=sdfio.SdfHeader(num_points=1, num_profiles=1),
         data=np.zeros((1, 1)),
-        trailer="OperatorName = WG 16\r\nnot tagged fields\r\nPartName = X",
+        trailer="OperatorName = Jane Doe\r\nnot tagged fields\r\nPartName = X",
     )
 
-    assert sdf.trailer_fields == {"OperatorName": "WG 16", "PartName": "X"}
+    assert sdf.trailer_fields == {"OperatorName": "Jane Doe", "PartName": "X"}
 
 
 def test_trailer_fields_getter_stays_lenient_on_non_ascii_bytes() -> None:

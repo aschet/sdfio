@@ -57,7 +57,7 @@ and writes it as a dict in that format either way:
 
 ```python
 sdf = sdfio.read("surface.sdf")
-sdf.trailer_fields = {"OperatorName": "WG 16"}
+sdf.trailer_fields = {"OperatorName": "Jane Doe"}
 print(sdf.trailer_fields)
 ```
 

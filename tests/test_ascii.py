@@ -205,8 +205,8 @@ def test_dumps_loads_roundtrips_empty_trailer_as_empty_string() -> None:
 def test_dumps_does_not_insert_blank_line_for_crlf_terminated_trailer() -> None:
     """A trailer that already ends in its own line terminator must not get a doubled one."""
     header = SdfHeader(dialect=SdfDialect.ISO_2_0, num_points=1, num_profiles=1, data_type=7)
-    text = _ascii.dumps(header, np.zeros((1, 1)), trailer="OperatorName = WG 16\r\n")
-    assert text.endswith("OperatorName = WG 16\r\n*\r\n")
+    text = _ascii.dumps(header, np.zeros((1, 1)), trailer="OperatorName = Jane Doe\r\n")
+    assert text.endswith("OperatorName = Jane Doe\r\n*\r\n")
 
 
 def test_dumps_v1_trailer_need_not_be_xml() -> None:

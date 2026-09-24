@@ -66,9 +66,9 @@ def test_header_magic_bcr() -> None:
 
 
 def test_sanitize_tagged_fields_drops_non_matching_lines() -> None:
-    text = "OperatorName = WG 16\r\nsome free text without equals\r\nPartName = X"
+    text = "OperatorName = Jane Doe\r\nsome free text without equals\r\nPartName = X"
 
-    assert sanitize_tagged_fields(text) == "OperatorName = WG 16\r\nPartName = X\r\n"
+    assert sanitize_tagged_fields(text) == "OperatorName = Jane Doe\r\nPartName = X\r\n"
 
 
 def test_sanitize_tagged_fields_never_raises_on_fully_malformed_text() -> None:

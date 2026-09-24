@@ -241,9 +241,9 @@ class SdfFile:
         >>> import numpy as np
         >>> from sdfio import SdfFile, SdfHeader
         >>> sdf = SdfFile(header=SdfHeader(), data=np.zeros((1, 1)))
-        >>> sdf.trailer_fields = {"OperatorName": "WG 16"}
+        >>> sdf.trailer_fields = {"OperatorName": "Jane Doe"}
         >>> sdf.trailer_fields
-        mappingproxy({'OperatorName': 'WG 16'})
+        mappingproxy({'OperatorName': 'Jane Doe'})
         """
         # sanitize_tagged_fields() already guarantees clean "Name = Value"
         # text, so parse_tagged_fields() here can never raise.
