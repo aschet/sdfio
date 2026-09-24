@@ -61,6 +61,15 @@ sdf.trailer_fields = {"OperatorName": "WG 16"}
 print(sdf.trailer_fields)
 ```
 
+## Non-Compliant Files
+
+Reading tolerates known real-world deviations from the standard:
+
+- An all-zero `datetime` field parses as `None` ("not recorded").
+- A binary `ManufacID` that's NUL-terminated instead of space-padded is
+  truncated at the NUL byte, discarding the undefined bytes past it.
+- A trailer that isn't 7-bit ASCII is returned as-is, not rejected.
+
 ## Command Line
 
 ```bash
