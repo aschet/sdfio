@@ -103,7 +103,9 @@ pip-audit
 
 ## References
 
-- ISO 25178-71:2026, *Geometrical product specifications (GPS) — Surface
-  texture: Areal — Part 71: Surface data file (SDF) file format*
-- K. J. Stout et al., *The Development of Methods for the Characterisation of
-  Roughness in Three Dimensions*, EUR 15178 EN, EC Brussels, 1993
+- ISO 25178-71:2026, [*Geometrical product specifications (GPS) — Surface
+  texture: Areal — Part 71: Surface data file (SDF) file
+  format*](https://www.iso.org/standard/88787.html)
+- K. J. Stout et al., [*The Development of Methods for the Characterisation of
+  Roughness in Three Dimensions*](https://op.europa.eu/publication-detail/-/publication/f912e210-d0cc-4016-8726-690a576ed3e2),
+  EUR 15178 EN, EC Brussels, 1993
