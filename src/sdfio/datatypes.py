@@ -206,7 +206,10 @@ def decode_raw(
     :param z_scale: Scale factor; ``data = raw * z_scale``.
     :param dialect: SDF dialect, see :meth:`SdfDataType.invalid_value`.
     :returns: ``float64`` array in metres, with the sentinel
-        replaced by ``NaN``.
+        replaced by ``NaN``. A writer that used ``NaN`` itself instead of the sentinel for
+        ``binary32``/``binary64`` data (not standard-compliant, but seen from some real-world
+        exporters) also decodes correctly here: IEEE 754 guarantees ``NaN`` propagates through
+        the ``* z_scale`` multiply below unconditionally, independently of the sentinel check.
     """
     invalid_mask = raw == data_type.invalid_value(dialect)
     scaled = raw.astype(np.float64) * z_scale

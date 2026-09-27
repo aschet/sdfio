@@ -69,6 +69,8 @@ Reading tolerates known real-world deviations from the standard:
 - A binary `ManufacID` that's NUL-terminated instead of space-padded is
   truncated at the NUL byte, discarding the undefined bytes past it.
 - A trailer that isn't 7-bit ASCII is returned as-is, not rejected.
+- A `binary32`/`binary64` value written as `NaN` instead of the sentinel still decodes as a
+  non-measured point.
 
 ## Command Line
 
