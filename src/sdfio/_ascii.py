@@ -34,7 +34,8 @@ from .header import (
 __all__ = ["dump", "dumps", "load", "loads"]
 
 _MAGIC_RE = re.compile(
-    rf"^(?P<prefix>[{ASCII_PREFIX}{BINARY_PREFIX}])(?P<dialect>[A-Z]{{3}})-(?P<version>\d\.\d)$"
+    rf"^(?P<prefix>[{ASCII_PREFIX}{BINARY_PREFIX}{ASCII_PREFIX.upper()}{BINARY_PREFIX.upper()}])"
+    rf"(?P<dialect>[A-Z]{{3}})-(?P<version>\d\.\d)$"
 )
 _INVALID_MARKER = "BAD"
 # The standard mandates <CRLF> line endings; dumps() always writes them.
@@ -160,7 +161,7 @@ def loads(text: str) -> tuple[SdfHeader, np.ndarray, str]:
     magic_match = _MAGIC_RE.match(_strip_comment(magic_line).strip())
     if not magic_match:
         raise SdfFormatError(f"Not an ASCII SDF file, unexpected magic: {magic_line!r}")
-    if magic_match.group("prefix") != ASCII_PREFIX:
+    if magic_match.group("prefix").lower() != ASCII_PREFIX:
         raise SdfFormatError("Binary magic found while parsing an ASCII SDF file")
     dialect_text = magic_match.group("dialect")
     version_text = magic_match.group("version")
@@ -231,9 +232,12 @@ def _parse_data(data_text: str, header: SdfHeader, data_type: SdfDataType) -> np
                 raise SdfFormatError(f"Invalid data value at position {index}: {token!r}") from None
 
     invalid_mask = np.isnan(values)
-    scaled = values * header.z_scale
-    scaled[invalid_mask] = np.nan
-    data = scaled.reshape(header.num_profiles, header.num_points)
+    if not header.dialect.has_ascii_invalid_token:
+        # BCR marks a bad point with the type's maximum value, as a number.
+        invalid_mask |= data_type.is_invalid(values, header.dialect)
+    # NaN before scaling: a huge marker value could overflow when scaled.
+    values[invalid_mask] = np.nan
+    data = (values * header.z_scale).reshape(header.num_profiles, header.num_points)
     return data[::-1] if header.dialect.reverses_profile_order else data
 
 
@@ -245,9 +249,11 @@ def load(fp: IO[str]) -> tuple[SdfHeader, np.ndarray, str]:
     return loads(fp.read())
 
 
-def _format_value(value: float, data_type: SdfDataType) -> str:
+def _format_value(value: float, data_type: SdfDataType, dialect: SdfDialect) -> str:
     if np.isnan(value):
-        return _INVALID_MARKER
+        if dialect.has_ascii_invalid_token:
+            return _INVALID_MARKER
+        value = data_type.ascii_invalid_value(dialect)
     if data_type.type == DataType.BINARY32:
         return format_scientific(value, 6, 2)
     if data_type.type == DataType.BINARY64:
@@ -300,7 +306,7 @@ def dumps(header: SdfHeader, data: np.ndarray, trailer: str = "") -> str:
     raw = write_data / header.z_scale
     validate_data_range(raw, np.isnan(write_data), data_type, header.dialect)
     for row in raw:
-        lines.append(" ".join(_format_value(value, data_type) for value in row))
+        lines.append(" ".join(_format_value(value, data_type, header.dialect) for value in row))
     lines.append("*")
 
     # The standard doesn't unambiguously specify how a missing/empty

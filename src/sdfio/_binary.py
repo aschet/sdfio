@@ -82,14 +82,14 @@ def load(fp: IO[bytes]) -> tuple[SdfHeader, np.ndarray, bytes]:
     magic_text = magic.decode("ascii", errors="replace")
     if (
         len(magic_text) != MAGIC_SIZE
-        or magic_text[0] not in (ASCII_PREFIX, BINARY_PREFIX)
+        or magic_text[0].lower() not in (ASCII_PREFIX, BINARY_PREFIX)
         or magic_text[4] != "-"
     ):
         raise SdfFormatError(f"Not an SDF file, unexpected magic: {magic_text!r}")
     dialect_text = magic_text[1:4]
     version_text = magic_text[_MAGIC_PREFIX_SIZE:]
     dialect = SdfDialect.resolve(dialect_text, version_text, magic_text)
-    if magic_text[0] != BINARY_PREFIX:
+    if magic_text[0].lower() != BINARY_PREFIX:
         raise SdfFormatError("ASCII magic found while parsing a binary SDF file")
 
     manufacturer_raw, create_raw, mod_raw = _STRINGS_STRUCT.unpack(fp.read(_STRINGS_STRUCT.size))

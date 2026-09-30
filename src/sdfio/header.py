@@ -132,6 +132,16 @@ class SdfDialect(StrEnum):
         return self is SdfDialect.BCR_1_0
 
     @property
+    def has_ascii_invalid_token(self) -> bool:
+        """Whether an ASCII file marks a non-measured point with the literal ``BAD``.
+
+        True for ISO. BCR-1.0 has no such token: it marks bad data with the
+        type's maximum value written as a number, exactly as in binary files.
+        ``BAD`` is still accepted when reading BCR-1.0.
+        """
+        return self is not SdfDialect.BCR_1_0
+
+    @property
     def reverses_profile_order(self) -> bool:
         """Whether the first profile stored on disk is at the maximum y, not y=0.
 
@@ -155,9 +165,10 @@ class SdfDialect(StrEnum):
 MAGIC_SIZE = len(ASCII_PREFIX) + len(SdfDialect.ISO_2_0)
 
 #: Every file magic sdfio can read, as bytes, e.g. for magic-sniffing file type detection.
+#: BCR-1.0 also allows an upper case ``A``/``B`` prefix, accepted for every dialect.
 MAGICS = tuple(
     f"{prefix}{dialect}".encode("ascii")
-    for prefix in (ASCII_PREFIX, BINARY_PREFIX)
+    for prefix in (ASCII_PREFIX, BINARY_PREFIX, ASCII_PREFIX.upper(), BINARY_PREFIX.upper())
     for dialect in SdfDialect
 )
 

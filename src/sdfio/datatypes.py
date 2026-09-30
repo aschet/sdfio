@@ -29,6 +29,11 @@ __all__ = [
 ]
 
 
+# BCR-1.0 marks a bad floating point value with any value at or above the nominal
+# maximum of its type, which is slightly below the largest representable value.
+_BCR_FLOAT_BAD_THRESHOLD: Final[dict[int, float]] = {4: 3.4e38, 8: 1.7e308}
+
+
 @dataclass(frozen=True)
 class SdfDataType:
     """Description of one SDF data area storage type.
@@ -59,6 +64,29 @@ class SdfDataType:
             np.iinfo(self.dtype) if np.issubdtype(self.dtype, np.integer) else np.finfo(self.dtype)
         )
         return float(bounds.max if dialect.uses_max_sentinel else bounds.min)
+
+    def ascii_invalid_value(self, dialect: SdfDialect) -> float:
+        """Return the number an ASCII file without a ``BAD`` token writes for a bad point.
+
+        :meth:`invalid_value`, except for a floating point type in BCR, where
+        the nominal maximum is written: it lies within the type's range and
+        reads back as bad, unlike the largest representable value, which has
+        no exact decimal form that stays in range.
+        """
+        if dialect.uses_max_sentinel and self.dtype.kind == "f":
+            return _BCR_FLOAT_BAD_THRESHOLD[self.dtype.itemsize]
+        return self.invalid_value(dialect)
+
+    def is_invalid(self, raw: np.ndarray, dialect: SdfDialect) -> np.ndarray:
+        """Mask of the raw values that mark a non-measured/spurious point, for ``dialect``.
+
+        Exactly :meth:`invalid_value`, except for a floating point type in BCR,
+        where any value at or above the type's nominal maximum (3.4E+38 for
+        ``binary32``, 1.7E+308 for ``binary64``) is bad, including ``inf``.
+        """
+        if dialect.uses_max_sentinel and self.dtype.kind == "f":
+            return np.asarray(raw >= self.dtype.type(_BCR_FLOAT_BAD_THRESHOLD[self.dtype.itemsize]))
+        return np.asarray(raw == self.invalid_value(dialect))
 
 
 #: All supported SDF data types, keyed by their ``DataType`` code.
@@ -156,11 +184,12 @@ def validate_data_range(
     elif valid.min() < np.finfo(data_type.dtype).min or valid.max() > np.finfo(data_type.dtype).max:
         raise SdfFormatError(f"Data value out of range for SDF data type {data_type.type.name}")
 
-    invalid_value = data_type.invalid_value(dialect)
-    if np.any(valid == invalid_value):
+    # A float is compared as stored: a value that rounds to the marker is one.
+    candidates = valid.astype(data_type.dtype) if data_type.dtype.kind == "f" else valid
+    if np.any(data_type.is_invalid(candidates, dialect)):
         raise SdfFormatError(
-            f"A data value equals the {data_type.type.name} invalid-point sentinel "
-            f"({invalid_value!r}); rescale the data to avoid this value"
+            f"A data value collides with the {data_type.type.name} invalid-point sentinel "
+            f"({data_type.invalid_value(dialect)!r}); rescale the data to avoid this value"
         )
 
 
@@ -214,10 +243,11 @@ def decode_raw(
         exporters) also decodes correctly here: IEEE 754 guarantees ``NaN`` propagates through
         the ``* z_scale`` multiply below unconditionally, independently of the sentinel check.
     """
-    invalid_mask = raw == data_type.invalid_value(dialect)
-    scaled = raw.astype(np.float64) * z_scale
+    invalid_mask = data_type.is_invalid(raw, dialect)
+    # NaN before scaling: a huge marker value could overflow when scaled.
+    scaled = raw.astype(np.float64)
     scaled[invalid_mask] = np.nan
-    return scaled
+    return scaled * z_scale
 
 
 def suggest_z_scale(

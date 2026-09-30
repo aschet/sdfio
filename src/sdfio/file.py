@@ -264,11 +264,12 @@ class SdfFile:
         """
         ascii_prefix = ASCII_PREFIX.encode("ascii")
         binary_prefix = BINARY_PREFIX.encode("ascii")
-        if len(data) < MAGIC_SIZE or data[:1] not in (ascii_prefix, binary_prefix):
+        prefix = data[:1].lower()
+        if len(data) < MAGIC_SIZE or prefix not in (ascii_prefix, binary_prefix):
             raise SdfFormatError("Not an SDF file, unexpected magic")
 
         trailer: str | bytes
-        if data[:1] == binary_prefix:
+        if prefix == binary_prefix:
             header, values, trailer = _binary.loads(data)
         else:
             header, values, trailer = _ascii.loads(data.decode("ascii", errors="replace"))

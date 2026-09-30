@@ -326,3 +326,11 @@ def test_load_rejects_bcr_checksum_too() -> None:
     )
     with pytest.raises(SdfFormatError, match="Checksummed SDF data areas"):
         _binary.load(io.BytesIO(header_bytes))
+
+
+def test_loads_accepts_upper_case_binary_prefix() -> None:
+    # BCR-1.0 allows "b" or "B" as the first magic character.
+    header = _make_header(dialect=SdfDialect.BCR_1_0, data_type=7, num_points=1, num_profiles=1)
+    blob = _binary.dumps(header, np.zeros((1, 1)))
+    read_header, _data, _trailer = _binary.loads(b"B" + blob[1:])
+    assert read_header.dialect == SdfDialect.BCR_1_0

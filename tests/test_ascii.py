@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import io
 import re
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -485,3 +486,56 @@ def test_loads_accepts_cr_lf_and_crlf_terminators(example: str, terminator: str)
     header, data, _trailer = _ascii.loads(text)
     assert data.shape == (2, 3)
     assert header.num_points == 3
+
+
+@pytest.mark.parametrize("example", [BCR_SPECIFICATION_EXAMPLE, ISO_ANNEX_A_EXAMPLE])
+def test_loads_accepts_upper_case_ascii_prefix(example: str) -> None:
+    # BCR-1.0 allows "a" or "A" as the first magic character.
+    header, _data, _trailer = _ascii.loads("A" + example[1:])
+    assert header.binary is False
+
+
+def test_loads_bcr_treats_type_maximum_as_bad_data() -> None:
+    # BCR has no BAD token: bad data is the type's maximum, as a number (int16: 32767).
+    text = BCR_SPECIFICATION_EXAMPLE.replace("5453", "32767")
+    _header, data, _trailer = _ascii.loads(text)
+    assert np.isnan(data[1, 2])  # first stored profile comes back last
+    assert np.isfinite(data).sum() == 5
+
+
+def test_loads_bcr_still_accepts_bad_token() -> None:
+    _header, data, _trailer = _ascii.loads(BCR_SPECIFICATION_EXAMPLE.replace("5453", "BAD"))
+    assert np.isnan(data[1, 2])
+
+
+def test_loads_bcr_float_at_nominal_maximum_is_bad_data() -> None:
+    text = re.sub(r"(DataType\s*=\s*)5", r"\g<1>FLOAT", BCR_SPECIFICATION_EXAMPLE)
+    text = text.replace("5453", "3.4E+38").replace("987", "3.3E+38")
+    _header, data, _trailer = _ascii.loads(text)
+    assert np.isnan(data[1, 2])
+    assert np.isfinite(data[0, 2])  # 3.3E+38 is below the threshold
+
+
+def test_loads_iso_does_not_treat_numbers_as_bad_data() -> None:
+    # ISO only has the BAD token; a huge or minimal number is ordinary data.
+    text = ISO_ANNEX_A_EXAMPLE.replace("-1.000000e+00", "-3.402823e+38")
+    _header, data, _trailer = _ascii.loads(text)
+    assert np.isfinite(data[0, 0])
+
+
+@pytest.mark.parametrize("data_type", [DataType.INT16, DataType.BINARY32, DataType.BINARY64])
+def test_dumps_bcr_writes_bad_data_as_number_not_token(data_type: DataType) -> None:
+    header = SdfHeader(
+        dialect=SdfDialect.BCR_1_0,
+        num_points=2,
+        num_profiles=1,
+        z_scale=1.0,
+        data_type=data_type,
+    )
+    text = _ascii.dumps(header, np.array([[1.0, np.nan]]))
+    assert "BAD" not in text
+    _header, data, _trailer = _ascii.loads(text)
+    np.testing.assert_array_equal(np.isnan(data), [[False, True]])
+    # ISO keeps the BAD token.
+    iso_text = _ascii.dumps(replace(header, dialect=SdfDialect.ISO_2_0), np.array([[1.0, np.nan]]))
+    assert "BAD" in iso_text

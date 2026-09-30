@@ -223,3 +223,39 @@ def test_suggest_z_scale_maximizes_resolution_bcr() -> None:
     np.testing.assert_allclose(
         decode_raw(raw, data_type, z_scale, SdfDialect.BCR_1_0)[:2], data[:2], rtol=1e-4
     )
+
+
+def test_decode_raw_bcr_float_treats_values_at_or_above_nominal_maximum_as_invalid() -> None:
+    binary32 = get_data_type(DataType.BINARY32)
+    raw32 = np.array([1.0, 3.4e38, np.finfo(np.float32).max, np.inf, 3.3e38], dtype=binary32.dtype)
+    decoded32 = decode_raw(raw32, binary32, 1.0, SdfDialect.BCR_1_0)
+    np.testing.assert_array_equal(np.isnan(decoded32), [False, True, True, True, False])
+
+    binary64 = get_data_type(DataType.BINARY64)
+    raw64 = np.array([1.0, 1.7e308, np.finfo(np.float64).max, 1.6e308], dtype=binary64.dtype)
+    decoded64 = decode_raw(raw64, binary64, 1.0, SdfDialect.BCR_1_0)
+    np.testing.assert_array_equal(np.isnan(decoded64), [False, True, True, False])
+
+
+def test_decode_raw_iso_float_value_near_maximum_is_data() -> None:
+    # ISO's sentinel is the minimum, so a huge positive value is ordinary data.
+    binary32 = get_data_type(DataType.BINARY32)
+    raw = np.array([3.4e38], dtype=binary32.dtype)
+    assert not np.isnan(decode_raw(raw, binary32, 1.0, SdfDialect.ISO_2_0)).any()
+
+
+def test_validate_data_range_rejects_bcr_float_value_at_nominal_maximum() -> None:
+    data_type = get_data_type(DataType.BINARY32)
+    with pytest.raises(SdfFormatError, match="invalid-point sentinel"):
+        validate_data_range(
+            np.array([3.4e38]),
+            invalid_mask=np.array([False]),
+            data_type=data_type,
+            dialect=SdfDialect.BCR_1_0,
+        )
+    validate_data_range(
+        np.array([3.3e38]),
+        invalid_mask=np.array([False]),
+        data_type=data_type,
+        dialect=SdfDialect.BCR_1_0,
+    )

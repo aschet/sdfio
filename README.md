@@ -70,6 +70,8 @@ Reading tolerates known real-world deviations from the standard:
   truncated at the NUL byte (allowed by BCR-1.0).
 - ASCII records ending in LF or CR instead of CRLF are read normally (allowed
   by BCR-1.0).
+- An upper case `A` or `B` as the first magic character is accepted (allowed
+  by BCR-1.0).
 - A trailer that isn't 7-bit ASCII is returned as-is, not rejected.
 - A `binary32`/`binary64` value written as `NaN` instead of the sentinel still decodes as a
   non-measured point.

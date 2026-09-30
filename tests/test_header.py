@@ -75,7 +75,7 @@ def test_sanitize_tagged_fields_never_raises_on_fully_malformed_text() -> None:
     assert sanitize_tagged_fields("just some prose\nwith no tags at all") == ""
 
 
-def test_magics_covers_every_dialect_in_both_formats() -> None:
+def test_magics_covers_every_dialect_in_both_formats_and_prefix_cases() -> None:
     assert MAGICS == (
         b"aISO-1.0",
         b"aISO-2.0",
@@ -83,6 +83,12 @@ def test_magics_covers_every_dialect_in_both_formats() -> None:
         b"bISO-1.0",
         b"bISO-2.0",
         b"bBCR-1.0",
+        b"AISO-1.0",
+        b"AISO-2.0",
+        b"ABCR-1.0",
+        b"BISO-1.0",
+        b"BISO-2.0",
+        b"BBCR-1.0",
     )
 
 

@@ -515,3 +515,19 @@ def test_sdffile_eq_compares_nan_aware_data() -> None:
     assert a == b
     assert a != c
     assert a != object()
+
+
+@pytest.mark.parametrize("file_format", [FileFormat.BINARY, FileFormat.ASCII])
+def test_loads_detects_upper_case_magic_prefix(file_format: FileFormat) -> None:
+    sdf = sdfio.SdfFile(
+        header=sdfio.SdfHeader(
+            dialect=SdfDialect.BCR_1_0,
+            binary=file_format == FileFormat.BINARY,
+            num_points=1,
+            num_profiles=1,
+            data_type=DataType.BINARY64,
+        ),
+        data=np.zeros((1, 1)),
+    )
+    blob = sdf.dumps()
+    assert sdfio.SdfFile.loads(blob[:1].upper() + blob[1:]).header.binary is sdf.header.binary
