@@ -101,6 +101,16 @@ def test_validate_data_range_rejects_float_sentinel_collision() -> None:
         validate_data_range(raw, invalid_mask=np.array([False]), data_type=data_type)
 
 
+def test_validate_data_range_rejects_sentinel_collision_after_rounding() -> None:
+    # 32766.999999999996 != 32767.0, but it rounds to the BCR int16 sentinel on encode.
+    data_type = get_data_type(DataType.INT16)
+    raw = np.array([32766.999999999996])
+    with pytest.raises(SdfFormatError, match="invalid-point sentinel"):
+        validate_data_range(
+            raw, invalid_mask=np.array([False]), data_type=data_type, dialect=SdfDialect.BCR_1_0
+        )
+
+
 def test_validate_data_range_rejects_bcr_sentinel_collision() -> None:
     data_type = get_data_type(DataType.INT16)
     raw = np.array([data_type.invalid_value(SdfDialect.BCR_1_0)])
@@ -110,7 +120,10 @@ def test_validate_data_range_rejects_bcr_sentinel_collision() -> None:
         )
 
 
-@pytest.mark.parametrize("data_type_code", list(DataType))
+@pytest.mark.parametrize(
+    "data_type_code",
+    [DataType.BINARY32, DataType.INT8, DataType.INT16, DataType.INT32, DataType.BINARY64],
+)
 def test_encode_decode_raw_roundtrip(data_type_code: DataType) -> None:
     data_type = get_data_type(data_type_code)
     data = np.array([1.0, np.nan, -2.0, 0.0])
@@ -127,6 +140,21 @@ def test_encode_decode_raw_roundtrip(data_type_code: DataType) -> None:
 def test_encode_decode_raw_roundtrip_bcr(data_type_code: DataType) -> None:
     data_type = get_data_type(data_type_code)
     data = np.array([1.0, np.nan, -2.0, 0.0])
+    z_scale = 1.0
+
+    raw = encode_raw(data, data_type, z_scale, SdfDialect.BCR_1_0)
+
+    assert raw[1] == data_type.dtype.type(data_type.invalid_value(SdfDialect.BCR_1_0))
+    np.testing.assert_allclose(
+        decode_raw(raw, data_type, z_scale, SdfDialect.BCR_1_0), data, equal_nan=True
+    )
+
+
+@pytest.mark.parametrize("data_type_code", [DataType.UINT8, DataType.UINT16, DataType.UINT32])
+def test_encode_decode_raw_roundtrip_bcr_unsigned(data_type_code: DataType) -> None:
+    # Unsigned types can't represent a negative value, unlike the signed BCR types above.
+    data_type = get_data_type(data_type_code)
+    data = np.array([1.0, np.nan, 2.0, 0.0])
     z_scale = 1.0
 
     raw = encode_raw(data, data_type, z_scale, SdfDialect.BCR_1_0)

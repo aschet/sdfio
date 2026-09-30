@@ -63,6 +63,9 @@ class SdfDataType:
 
 #: All supported SDF data types, keyed by their ``DataType`` code.
 DATA_TYPES: Final[dict[DataType, SdfDataType]] = {
+    DataType.UINT8: SdfDataType(DataType.UINT8, np.dtype("<u1"), frozenset({SdfDialect.BCR_1_0})),
+    DataType.UINT16: SdfDataType(DataType.UINT16, np.dtype("<u2"), frozenset({SdfDialect.BCR_1_0})),
+    DataType.UINT32: SdfDataType(DataType.UINT32, np.dtype("<u4"), frozenset({SdfDialect.BCR_1_0})),
     DataType.BINARY32: SdfDataType(
         DataType.BINARY32,
         np.dtype("<f4"),
@@ -143,9 +146,9 @@ def validate_data_range(
         # Round before range-checking: a value like 32767.4 (int16, max
         # 32767) is in range once rounded and must not be rejected for
         # exceeding the limit before rounding is even applied.
-        rounded = np.rint(valid)
+        valid = np.rint(valid)
         info = np.iinfo(data_type.dtype)
-        if rounded.min() < info.min or rounded.max() > info.max:
+        if valid.min() < info.min or valid.max() > info.max:
             raise SdfFormatError(
                 f"Data value out of range for SDF data type {data_type.type.name} "
                 f"({info.min}..{info.max})"
@@ -248,7 +251,10 @@ def suggest_z_scale(
     usable_min = info.min if dialect.uses_max_sentinel else info.min + 1
     high, low = float(finite.max()), float(finite.min())
     candidates = [high / usable_max] if high > 0 else []
-    if low < 0:
+    # usable_min is 0 for an unsigned dtype, which can't represent a negative value at any
+    # z_scale; skip the candidate rather than dividing by zero and let encode_raw's own range
+    # check reject the actual value with a clear error if this is ever attempted.
+    if low < 0 and usable_min != 0:
         candidates.append(low / usable_min)
     z_scale = max(candidates) if candidates else 1.0
     return z_scale if z_scale > 0 else 1.0

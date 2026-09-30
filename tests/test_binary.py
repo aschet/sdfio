@@ -195,7 +195,7 @@ def test_dump_rejects_non_ascii_manufacturer_id() -> None:
 
 
 def test_load_truncates_manufacturer_id_at_first_nul() -> None:
-    """Some real writers NUL-terminate ManufacID instead of space-padding it; strip past the NUL."""
+    """BCR allows a NUL-terminated ManufacID (some ISO writers do too); strip past the NUL."""
     header = _make_header(num_points=1, num_profiles=1)
     buffer = io.BytesIO()
     _binary.dump(header, np.zeros((1, 1)), buffer)

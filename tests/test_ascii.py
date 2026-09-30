@@ -5,11 +5,13 @@
 from __future__ import annotations
 
 import io
+import re
 
 import numpy as np
 import pytest
 
 from sdfio import _ascii
+from sdfio.datatypes import DataType
 from sdfio.exceptions import SdfFormatError
 from sdfio.header import SdfDialect, SdfHeader
 
@@ -365,3 +367,121 @@ def test_loads_rejects_bcr_checksum_too() -> None:
     )
     with pytest.raises(SdfFormatError, match="Checksummed SDF data areas"):
         _ascii.loads(text)
+
+
+# Adapted from the ASCII example in the BCR specification (Stout et al.,
+# EUR 15178 EN), reduced to 3x2 data points (the original elides all but
+# a few of 61440 values). Header, comments, symbolic values and trailer layout
+# are as in the figure.
+BCR_SPECIFICATION_EXAMPLE = (
+    "aBCR-1.0                                        ; This must be first\r\n"
+    "ManufacID                   = XYZ/T52           ; The following records\r\n"
+    "                                                ; can be presented in any\r\n"
+    "                                                ; order\r\n"
+    "CreateDate                  = 040519931442      ; 4 May 1993 @ 2:42pm\r\n"
+    "ModDate                     = 020619930931      ; 2 June 1993 @ 9:31am\r\n"
+    "NumPoints                   = 3\r\n"
+    "NumProfiles                 = 2\r\n"
+    "Xscale                      = 3.9063E-006\r\n"
+    "Yscale                      = 3.9063E-006\r\n"
+    "Zscale                      = 6.2564E-10\r\n"
+    "Zresolution                 = -1                ; unknown\r\n"
+    "Compression                 = NULL              ; or 0\r\n"
+    "DataType                    = 5                 ; or INTEGER\r\n"
+    "CheckType                   = NULL              ; or 0\r\n"
+    "*                                               ; EOF header character\r\n"
+    "                                                ; start of 6 data points\r\n"
+    "325         245    5453\r\n"
+    "452         765    987                          ; data point 6\r\n"
+    "*\r\n"
+    "                                                ; Additional information\r\n"
+    "Operator                    = Tom    Jones\r\n"
+    "Shift                       = 1\r\n"
+    "Part                        = Cylinder bore B154\r\n"
+    "*                                               ; EOF file\r\n"
+)
+
+
+def test_loads_bcr_specification_example() -> None:
+    header, data, trailer = _ascii.loads(BCR_SPECIFICATION_EXAMPLE)
+    assert header.dialect == SdfDialect.BCR_1_0
+    assert header.manufacturer_id == "XYZ/T52"
+    assert header.create_date is not None
+    assert header.create_date.strftime("%d%m%Y%H%M") == "040519931442"
+    assert header.data_type == DataType.INT16  # "DataType =5"
+    assert header.z_scale == pytest.approx(6.2564e-10)
+    assert header.z_resolution == -1
+    # BCR stores the first profile at the maximum y, so the rows come back reversed.
+    np.testing.assert_allclose(
+        data, np.array([[452, 765, 987], [325, 245, 5453]]) * 6.2564e-10, rtol=1e-12
+    )
+    # The trailer is free text: a ";" there is not a comment, and is kept verbatim.
+    assert "; " in trailer
+    assert re.search(r"Operator\s*=\s*Tom\s+Jones", trailer)
+
+
+@pytest.mark.parametrize(
+    ("name", "code"),
+    [
+        ("UCHAR", DataType.UINT8),
+        ("UINTEGER", DataType.UINT16),
+        ("ULONGINT", DataType.UINT32),
+        ("FLOAT", DataType.BINARY32),
+        ("CHAR", DataType.INT8),
+        ("INTEGER", DataType.INT16),
+        ("longint", DataType.INT32),  # case-insensitive
+        ("Double", DataType.BINARY64),
+    ],
+)
+def test_loads_bcr_accepts_symbolic_data_type(name: str, code: DataType) -> None:
+    text = re.sub(r"(DataType\s*=\s*)5", rf"\g<1>{name}", BCR_SPECIFICATION_EXAMPLE)
+    text = text.replace("325         245    5453", "1 2 3").replace(
+        "452         765    987", "4 5 6"
+    )
+    header, _data, _trailer = _ascii.loads(text)
+    assert header.data_type == code
+
+
+@pytest.mark.parametrize("none", ["NULL", "NONE", "None", "0"])
+def test_loads_bcr_accepts_any_spelling_of_none(none: str) -> None:
+    # The specification's own example uses NULL and notes "or 0" for the same value.
+    header, _data, _trailer = _ascii.loads(BCR_SPECIFICATION_EXAMPLE.replace("NULL", none))
+    assert header.dialect == SdfDialect.BCR_1_0
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "match"),
+    [
+        ("Compression", "RLL", "Compressed"),
+        ("CheckType", "UIntTrace", "Checksummed"),
+    ],
+)
+def test_loads_bcr_rejects_unsupported_symbolic_values(field: str, value: str, match: str) -> None:
+    text = re.sub(rf"{field}\s*=\s*NULL", f"{field} = {value}", BCR_SPECIFICATION_EXAMPLE)
+    with pytest.raises(SdfFormatError, match=match):
+        _ascii.loads(text)
+
+
+def test_loads_bcr_rejects_unknown_symbolic_value() -> None:
+    with pytest.raises(SdfFormatError, match="Invalid integer value"):
+        _ascii.loads(re.sub(r"(DataType\s*=\s*)5", r"\g<1>SHORT", BCR_SPECIFICATION_EXAMPLE))
+
+
+def test_loads_iso_rejects_bcr_only_ascii_extensions() -> None:
+    iso = ISO_ANNEX_A_EXAMPLE
+    with pytest.raises(SdfFormatError, match="unexpected magic"):
+        _ascii.loads(iso.replace("aISO-2.0\r\n", "aISO-2.0 ; comment\r\n"))
+    with pytest.raises(SdfFormatError, match="Invalid integer value"):
+        _ascii.loads(iso.replace("DataType = 3", "DataType = FLOAT"))
+    with pytest.raises(SdfFormatError, match="Invalid integer value"):
+        _ascii.loads(iso.replace("DataType = 3", "DataType = 3 ; comment"))
+
+
+@pytest.mark.parametrize("terminator", ["\r\n", "\n", "\r"])
+@pytest.mark.parametrize("example", [BCR_SPECIFICATION_EXAMPLE, ISO_ANNEX_A_EXAMPLE])
+def test_loads_accepts_cr_lf_and_crlf_terminators(example: str, terminator: str) -> None:
+    # The standard mandates CRLF and BCR-1.0 allows any of the three; reading accepts all three.
+    text = example.replace("\r\n", terminator)
+    header, data, _trailer = _ascii.loads(text)
+    assert data.shape == (2, 3)
+    assert header.num_points == 3

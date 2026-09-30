@@ -201,11 +201,41 @@ def test_write_auto_z_scale_maximizes_resolution() -> None:
 
 
 @pytest.mark.parametrize("file_format", [FileFormat.BINARY, FileFormat.ASCII])
-@pytest.mark.parametrize("data_type", list(DataType))
+@pytest.mark.parametrize(
+    "data_type",
+    [DataType.BINARY32, DataType.INT8, DataType.INT16, DataType.INT32, DataType.BINARY64],
+)
 def test_write_read_roundtrip_all_data_types(file_format: FileFormat, data_type: DataType) -> None:
     data = np.array([[1.0, np.nan, -2.0], [0.0, 3.0, 4.0]])
     sdf = sdfio.SdfFile(
         header=sdfio.SdfHeader(
+            binary=file_format == FileFormat.BINARY,
+            num_points=3,
+            num_profiles=2,
+            x_scale=1e-6,
+            y_scale=1e-6,
+            z_scale=1.0,
+            data_type=data_type,
+        ),
+        data=data,
+    )
+
+    reloaded = sdfio.SdfFile.loads(sdf.dumps())
+
+    assert reloaded.header.data_type == data_type
+    np.testing.assert_allclose(reloaded.data, data, rtol=1e-6, atol=1e-6, equal_nan=True)
+
+
+@pytest.mark.parametrize("file_format", [FileFormat.BINARY, FileFormat.ASCII])
+@pytest.mark.parametrize("data_type", [DataType.UINT8, DataType.UINT16, DataType.UINT32])
+def test_write_read_roundtrip_bcr_unsigned_data_types(
+    file_format: FileFormat, data_type: DataType
+) -> None:
+    # Unsigned types are BCR-1.0 only (see DATA_TYPES) and can't represent a negative value.
+    data = np.array([[1.0, np.nan, 2.0], [0.0, 3.0, 4.0]])
+    sdf = sdfio.SdfFile(
+        header=sdfio.SdfHeader(
+            dialect=SdfDialect.BCR_1_0,
             binary=file_format == FileFormat.BINARY,
             num_points=3,
             num_profiles=2,

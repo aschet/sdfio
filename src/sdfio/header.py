@@ -111,6 +111,27 @@ class SdfDialect(StrEnum):
         return self is SdfDialect.BCR_1_0
 
     @property
+    def allows_ascii_comments(self) -> bool:
+        """Whether an ASCII file may carry ``;`` comments in its header and data records.
+
+        True only for :attr:`BCR_1_0`: its specification says everything
+        after a ``;`` on a line is a comment and is ignored, and a line
+        starting with ``;`` is ignored entirely. ISO 25178-71 has no such
+        rule. The trailer is free text, so a ``;`` there is never a comment.
+        """
+        return self is SdfDialect.BCR_1_0
+
+    @property
+    def allows_symbolic_header_values(self) -> bool:
+        """Whether an ASCII header may spell ``DataType``/``Compression``/``CheckType`` as names.
+
+        True only for :attr:`BCR_1_0`, whose specification lets ASCII files
+        use e.g. ``DataType = INTEGER`` or ``Compression = NULL`` instead of
+        the numeric code.
+        """
+        return self is SdfDialect.BCR_1_0
+
+    @property
     def reverses_profile_order(self) -> bool:
         """Whether the first profile stored on disk is at the maximum y, not y=0.
 
@@ -150,11 +171,14 @@ class DataType(IntEnum):
     itself imports :class:`SdfDialect` from this module, so the reverse
     import would be circular. :mod:`.datatypes` re-exports this name.
 
-    Codes start at 3, not 0: pre-standard/vendor variants of this format
-    used codes 0-2 for unsigned integer types the standard doesn't support;
-    those codes were dropped rather than reused for something else.
+    Codes 0-2 are unsigned integer types from the pre-standard BCR-1.0
+    proposal; ISO dropped them (see :mod:`.datatypes`'s ``DATA_TYPES`` for
+    which dialects accept which code).
     """
 
+    UINT8 = 0
+    UINT16 = 1
+    UINT32 = 2
     BINARY32 = 3
     INT8 = 4
     INT16 = 5

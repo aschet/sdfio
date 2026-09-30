@@ -63,8 +63,9 @@ def test_mm11_export_matches_input_data(path: Path) -> None:
 def test_mm11_binary_export_manufacturer_id_is_recovered_cleanly(path: Path) -> None:
     """Check sdfio recovers ManufacID cleanly from a real file, not just the synthetic case.
 
-    This exporter NUL-terminates ManufacID instead of space-padding it,
-    leaving trailing garbage -- see tests/interop_samples/README.md and
+    This exporter NUL-terminates ManufacID as BCR-1.0 allows, instead of
+    space-padding it as ISO requires, leaving trailing garbage -- see
+    tests/interop_samples/README.md and
     test_binary.py's test_load_truncates_manufacturer_id_at_first_nul.
     """
     assert sdfio.read(path).header.manufacturer_id == "test"

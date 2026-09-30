@@ -38,9 +38,27 @@ _MAGIC_RE = re.compile(
 )
 _INVALID_MARKER = "BAD"
 # The standard mandates <CRLF> line endings; dumps() always writes them.
-# \r? here is a read-side leniency to also accept bare LF.
-_LINE_SPLIT_RE = re.compile(r"\r?\n")
+# Reading also accepts a bare LF or CR, which BCR-1.0's specification allows.
+_LINE_SPLIT_RE = re.compile(r"\r\n|\n|\r")
 _TERMINATOR_RE = re.compile(r"^[ \t]*\*[ \t]*$")
+_COMMENT_MARKER = ";"
+
+# BCR-1.0 lets an ASCII header spell these fields as names instead of codes,
+# matched case-insensitively. For the data type these are the specification's
+# suggested abbreviations, not the full type names.
+_BCR_DATA_TYPE_NAMES = {
+    "UCHAR": DataType.UINT8,
+    "UINTEGER": DataType.UINT16,
+    "ULONGINT": DataType.UINT32,
+    "FLOAT": DataType.BINARY32,
+    "CHAR": DataType.INT8,
+    "INTEGER": DataType.INT16,
+    "LONGINT": DataType.INT32,
+    "DOUBLE": DataType.BINARY64,
+}
+# "NULL" is what the specification's own ASCII example uses for "none".
+_BCR_COMPRESSION_NAMES = {"NULL": 0, "NONE": 0, "RLL": 1}
+_BCR_CHECK_TYPE_NAMES = {"NULL": 0, "NONE": 0, "UINTTRACE": 1}
 
 
 def _format_scale_field(value: float) -> str:
@@ -49,7 +67,11 @@ def _format_scale_field(value: float) -> str:
     return format_scientific(value, 14, 3)
 
 
-def _split_records(remainder: str) -> list[str]:
+def _strip_comment(line: str) -> str:
+    return line.split(_COMMENT_MARKER, 1)[0]
+
+
+def _split_records(remainder: str, dialect: SdfDialect) -> list[str]:
     # Splitting by matching the "*" delimiter together with its surrounding
     # newlines (as one combined pattern) can't tell two delimiters directly
     # adjacent to each other (an explicit empty record, e.g. an empty
@@ -57,14 +79,19 @@ def _split_records(remainder: str) -> list[str]:
     # the newline between them would need to be consumed by both matches at
     # once. Splitting into lines first and testing each one for being a bare
     # "*" avoids that ambiguity.
+    # With comments enabled, a "*" followed by a comment still terminates its
+    # record, and the comment is dropped from the header and data records. The
+    # trailer (third record) is free text, so it is kept verbatim.
+    comments = dialect.allows_ascii_comments
     records = []
     current: list[str] = []
     for line in _LINE_SPLIT_RE.split(remainder):
-        if _TERMINATOR_RE.match(line):
+        bare = _strip_comment(line) if comments else line
+        if _TERMINATOR_RE.match(bare):
             records.append("\n".join(current))
             current = []
         else:
-            current.append(line)
+            current.append(bare if comments and len(records) < 2 else line)
     records.append("\n".join(current))
     return records
 
@@ -81,6 +108,20 @@ def _parse_int(fields: Mapping[str, str], name: str) -> int:
     try:
         return int(value)
     except ValueError:
+        raise SdfFormatError(
+            f"Invalid integer value for SDF header field {name!r}: {value!r}"
+        ) from None
+
+
+def _parse_coded(
+    fields: Mapping[str, str], name: str, dialect: SdfDialect, symbols: Mapping[str, int]
+) -> int:
+    value = _field(fields, name)
+    try:
+        return int(value)
+    except ValueError:
+        if dialect.allows_symbolic_header_values and value.upper() in symbols:
+            return int(symbols[value.upper()])
         raise SdfFormatError(
             f"Invalid integer value for SDF header field {name!r}: {value!r}"
         ) from None
@@ -110,13 +151,13 @@ def loads(text: str) -> tuple[SdfHeader, np.ndarray, str]:
         ``errors="replace"`` in :meth:`SdfFile.loads`).
     """
     text = text.lstrip("\ufeff")
-    first_newline = re.search(r"\r?\n", text)
+    first_newline = _LINE_SPLIT_RE.search(text)
     if first_newline is None:
         raise SdfFormatError("SDF file is missing the header and data records")
     magic_line = text[: first_newline.start()].strip()
     remainder = text[first_newline.end() :]
 
-    magic_match = _MAGIC_RE.match(magic_line)
+    magic_match = _MAGIC_RE.match(_strip_comment(magic_line).strip())
     if not magic_match:
         raise SdfFormatError(f"Not an ASCII SDF file, unexpected magic: {magic_line!r}")
     if magic_match.group("prefix") != ASCII_PREFIX:
@@ -124,8 +165,10 @@ def loads(text: str) -> tuple[SdfHeader, np.ndarray, str]:
     dialect_text = magic_match.group("dialect")
     version_text = magic_match.group("version")
     dialect = SdfDialect.resolve(dialect_text, version_text, magic_line)
+    if _COMMENT_MARKER in magic_line and not dialect.allows_ascii_comments:
+        raise SdfFormatError(f"Not an ASCII SDF file, unexpected magic: {magic_line!r}")
 
-    records = _split_records(remainder)
+    records = _split_records(remainder, dialect)
     if len(records) < 3:
         raise SdfFormatError("SDF file must contain header, data and trailer records")
     # The trailer is itself terminated by its own "*" record; drop
@@ -136,10 +179,10 @@ def loads(text: str) -> tuple[SdfHeader, np.ndarray, str]:
     trailer_text = "*".join(trailer_parts)
 
     fields = parse_tagged_fields(header_text)
-    data_type_code = _parse_int(fields, "DataType")
+    data_type_code = _parse_coded(fields, "DataType", dialect, _BCR_DATA_TYPE_NAMES)
     data_type = require_supported_data_type(data_type_code, dialect)
-    validate_compression(_parse_int(fields, "Compression"))
-    validate_check_type(_parse_int(fields, "CheckType"))
+    validate_compression(_parse_coded(fields, "Compression", dialect, _BCR_COMPRESSION_NAMES))
+    validate_check_type(_parse_coded(fields, "CheckType", dialect, _BCR_CHECK_TYPE_NAMES))
 
     header = SdfHeader(
         dialect=dialect,

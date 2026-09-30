@@ -72,9 +72,9 @@ def load(fp: IO[bytes]) -> tuple[SdfHeader, np.ndarray, bytes]:
     :raises SdfFormatError: If the file is malformed, e.g. a bad magic,
         unsupported dialect or data type, or wrong data length. The trailer
         is not validated on read; it is returned as-is even if not 7-bit
-        ASCII. ``ManufacID`` is truncated at the first NUL byte, tolerating
-        writers that NUL-terminate it instead of space-padding it as the
-        standard requires.
+        ASCII. ``ManufacID`` is truncated at the first NUL byte: BCR-1.0 lets
+        a string shorter than its field be NUL-terminated, and some ISO
+        writers do the same instead of space-padding it as ISO requires.
     """
     magic = fp.read(MAGIC_SIZE)
     if len(magic) != MAGIC_SIZE:
@@ -113,10 +113,11 @@ def load(fp: IO[bytes]) -> tuple[SdfHeader, np.ndarray, bytes]:
     # trailer, ManufacID/dates are not re-validated as ASCII on read) so a
     # file that's merely non-compliant here can still be opened and
     # inspected; only *writing* one is rejected (validate_manufacturer_id_ascii).
-    # ManufacID is truncated at the first NUL byte before decoding: the
-    # standard requires space-padding past the valid content, but some real
-    # writers instead NUL-terminate it and leave whatever was in memory
-    # after that, which would otherwise show up as decode-replacement noise.
+    # ManufacID is truncated at the first NUL byte before decoding: BCR-1.0
+    # lets a string shorter than its field be NUL-terminated (what follows is
+    # undefined), while ISO requires space-padding. Some ISO writers follow the
+    # BCR rule; truncating handles both and keeps the undefined bytes out of
+    # the decoded value.
     header = SdfHeader(
         dialect=dialect,
         binary=True,
