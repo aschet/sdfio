@@ -67,9 +67,8 @@ def test_there_are_exactly_the_files_that_the_generator_makes() -> None:
     expected = {_path(*case) for case in CASES}
     found = {path for folder in generate.FOLDERS.values() for path in folder.glob("*.sdf")}
     assert found == expected
-    assert {folder for folder in SAMPLES.iterdir() if folder.is_dir()} == set(
-        generate.FOLDERS.values()
-    )
+    folders = {folder for folder in SAMPLES.iterdir() if folder.is_dir()}
+    assert folders - {SAMPLES / "__pycache__"} == set(generate.FOLDERS.values())
 
 
 @pytest.mark.parametrize("case", CASES, ids=_id)
