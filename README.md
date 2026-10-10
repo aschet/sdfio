@@ -46,6 +46,11 @@ metres, in the standard's right-handed coordinate system: y increases with
 row index and x with column index (`sdfio.SdfFile.x_axis`/`y_axis` return
 the coordinates, also in metres).
 
+`sdf.points()` combines the coordinates and the heights in a
+`(num_profiles, num_points, 3)` array of x, y and z in metres.
+`sdf.points(drop_invalid=True)` leaves out the points that are not measured and
+returns the `(N, 3)` array of points that point cloud libraries take.
+
 Non-measured or spurious points (the `BAD` marker in ASCII files, or the
 data type's reserved sentinel value in binary files) are represented as
 `NaN` in `sdf.data`, and `sdfio.write` writes `NaN` values back the same way.
@@ -75,6 +80,12 @@ Reading tolerates known real-world deviations from the standard:
 - A trailer that isn't 7-bit ASCII is returned as-is, not rejected.
 - A `binary32`/`binary64` value written as `NaN` instead of the sentinel still decodes as a
   non-measured point.
+
+## Documentation
+
+- [SDF Format](https://aschet.github.io/sdfio/format.html): what an SDF file contains.
+- [Examples](https://aschet.github.io/sdfio/examples.html): a short script for each topic, in
+  the `examples/` folder.
 
 ## Command Line
 

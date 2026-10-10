@@ -14,5 +14,7 @@ SPDX-License-Identifier: MIT
 ```{toctree}
 :hidden:
 
+format
+examples
 api
 ```

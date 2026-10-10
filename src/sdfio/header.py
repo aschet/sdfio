@@ -426,8 +426,7 @@ class SdfHeader:
     :param num_points: Number of columns *M* in the data matrix (x-direction).
     :param num_profiles: Number of rows *N* in the data matrix (y-direction).
         The standard uses ``1`` here for a profile (as opposed to an areal
-        surface) -- in that case ``y_scale`` is meaningless and should be
-        ignored.
+        surface) and calls ``y_scale`` meaningless in that case.
     :param x_scale: Sampling interval in metres along x.
     :param y_scale: Sampling interval in metres along y.
     :param z_scale: Scale factor applied to the coded height values.

@@ -100,11 +100,51 @@ class SdfFile:
         See :attr:`x_axis` for why ``num_profiles`` (not ``num_points``) is
         the correct length here.
 
-        For a profile (``num_profiles == 1``), the standard defines
-        ``y_scale`` as meaningless -- this still returns ``[0.0]``, but that
-        single value shouldn't be treated as physically significant.
+        For a profile (``num_profiles == 1``), the standard calls ``y_scale``
+        meaningless; this returns ``[0.0]`` regardless of its value.
         """
         return np.arange(self.header.num_profiles) * self.header.y_scale
+
+    def points(self, *, drop_invalid: bool = False) -> np.ndarray:
+        """Return the points of the grid as an ``(num_profiles, num_points, 3)`` array in metres.
+
+        The last axis holds ``x``, ``y`` and ``z``: ``x`` from :attr:`x_axis` along the columns,
+        ``y`` from :attr:`y_axis` along the rows, and ``z`` from :attr:`data`. The array is
+        new, so changing it does not change the file. A point that is not measured has ``NaN``
+        in ``z`` and keeps its ``x`` and ``y``. A profile has one row, with ``y`` equal to 0.
+
+        ``reshape(-1, 3)`` gives the ``(N, 3)`` array of points that point cloud libraries take.
+
+        :param drop_invalid: Leave out the points that are not measured. The result is then the
+            ``(N, 3)`` array of the measured points, row by row, and the shape of the grid is lost.
+        :raises SdfFormatError: If the shape of ``data`` is not
+            ``(header.num_profiles, header.num_points)``.
+
+        >>> import numpy as np
+        >>> from sdfio import SdfFile, SdfHeader
+        >>> header = SdfHeader(num_points=3, num_profiles=2, x_scale=1e-6, y_scale=2e-6)
+        >>> sdf = SdfFile(header=header, data=np.array([[0.0, 1.0, 2.0], [3.0, np.nan, 5.0]]))
+        >>> points = sdf.points()
+        >>> points.shape
+        (2, 3, 3)
+        >>> points[1, 2].tolist()
+        [2e-06, 2e-06, 5.0]
+        >>> sdf.points(drop_invalid=True).shape
+        (5, 3)
+        """
+        shape = (self.header.num_profiles, self.header.num_points)
+        if self.data.shape != shape:
+            raise SdfFormatError(
+                f"The data has the shape {self.data.shape}, but the header says {shape}"
+            )
+        grid = np.empty((*shape, 3), dtype=np.float64)
+        grid[..., 0] = self.x_axis
+        grid[..., 1] = self.y_axis[:, np.newaxis]
+        grid[..., 2] = self.data
+        if not drop_invalid:
+            return grid
+        flat = grid.reshape(-1, 3)
+        return flat[np.isfinite(flat[:, 2])]
 
     @property
     def data_type(self) -> DataType:
