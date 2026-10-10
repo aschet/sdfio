@@ -46,6 +46,7 @@ DATA_TYPES = {
     },
     SdfDialect.BCR_1_0: {DataType.UINT16, DataType.INT16, DataType.INT32, DataType.BINARY64},
 }
+FLOAT_TYPES = (DataType.BINARY32, DataType.BINARY64)
 CASES = [
     (dialect, name, suffix)
     for dialect in generate.FOLDERS
@@ -74,11 +75,20 @@ def test_there_are_exactly_the_files_that_the_generator_makes() -> None:
 @pytest.mark.parametrize("case", CASES, ids=_id)
 def test_a_sample_is_what_the_generator_makes(case: tuple[SdfDialect, str, str]) -> None:
     dialect, name, suffix = case
-    sample = generate.build(dialect)[name]
+    sample = sdfio.read(_path(*case))
+    made = SdfFile.loads(
+        generate.dumps(dialect, generate.build(dialect)[name], generate.FORMATS[suffix])
+    )
 
-    made = generate.dumps(dialect, sample, generate.FORMATS[suffix])
-
-    assert _path(*case).read_bytes() == made
+    # The bytes are not compared: the last digit of a sine depends on the platform, which can
+    # change a float in the last place and an integer by one step in a rounding that is close.
+    assert sample.header == made.header
+    assert sample.trailer == made.trailer
+    assert np.array_equal(np.isnan(sample.data), np.isnan(made.data))
+    step = sample.header.z_scale if sample.data_type not in FLOAT_TYPES else 0.0
+    np.testing.assert_allclose(
+        sample.data, made.data, rtol=1e-9, atol=max(step * (1 + 1e-9), 1e-15), equal_nan=True
+    )
 
 
 @pytest.mark.parametrize("case", CASES, ids=_id)
@@ -99,7 +109,7 @@ def test_a_sample_reads_as_it_was_meant(case: tuple[SdfDialect, str, str]) -> No
     assert np.array_equal(np.isnan(sdf.data), np.isnan(expected.data))
     # The heights are the data to the precision of the type: the quantization step of an
     # integer type and the digits of the text of a float.
-    if expected.data_type in (DataType.BINARY32, DataType.BINARY64):
+    if expected.data_type in FLOAT_TYPES:
         np.testing.assert_allclose(sdf.data, expected.data, rtol=1e-6, atol=1e-12, equal_nan=True)
     else:
         step = sdf.header.z_scale
