@@ -312,7 +312,7 @@ class SdfFile:
         *,
         x_scale: float,
         y_scale: float,
-        z_scale: float | Literal["auto"] = 1e-6,
+        z_scale: float | Literal["auto"] = "auto",
         format: FileFormat = FileFormat.BINARY,
         metadata: Metadata | None = None,
         trailer: str | bytes = "",
@@ -328,9 +328,9 @@ class SdfFile:
             marks points that were not measured. A ``float64`` array is used as it is, not copied.
         :param x_scale: Sampling interval along x, in metres.
         :param y_scale: Sampling interval along y, in metres.
-        :param z_scale: Scale factor of the coded heights, or ``"auto"`` for the smallest that
-            fits ``data`` into ``metadata.data_type``, see
-            :func:`sdfio.datatypes.suggest_z_scale`.
+        :param z_scale: Scale factor of the coded heights, or ``"auto"`` (the default) for the
+            smallest that fits ``data`` into ``metadata.data_type``, which is 1 for a float
+            type, see :func:`sdfio.datatypes.suggest_z_scale`.
         :param format: The encoding, which becomes :attr:`Header.format`.
         :param metadata: Header template, shared by files that have the same metadata, such as
             ``Metadata(manufacturer_id="acme")``. The defaults are ISO-2.0, ``binary64`` and the
@@ -423,7 +423,7 @@ def write(
     *,
     x_scale: float,
     y_scale: float,
-    z_scale: float | Literal["auto"] = 1e-6,
+    z_scale: float | Literal["auto"] = "auto",
     format: FileFormat = FileFormat.BINARY,
     metadata: Metadata | None = None,
     trailer: str | bytes = "",
@@ -438,8 +438,9 @@ def write(
         points that were not measured.
     :param x_scale: Sampling interval along x, in metres.
     :param y_scale: Sampling interval along y, in metres.
-    :param z_scale: Scale factor of the coded heights, or ``"auto"`` for the smallest that fits
-        ``data`` into ``metadata.data_type``, see :func:`sdfio.datatypes.suggest_z_scale`.
+    :param z_scale: Scale factor of the coded heights, or ``"auto"`` (the default) for the
+        smallest that fits ``data`` into ``metadata.data_type``, which is 1 for a float type, see
+        :func:`sdfio.datatypes.suggest_z_scale`.
     :param format: The encoding, ASCII or binary.
     :param metadata: Header template, shared by files that have the same metadata, such as
         ``Metadata(manufacturer_id="acme")``. The defaults are ISO-2.0, ``binary64`` and the

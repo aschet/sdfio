@@ -22,7 +22,7 @@ Basic usage::
     >>> sdf.data.shape
     (2, 3)
     >>> sdf.header.z_scale
-    1e-06
+    1.0
 
 The examples below write to memory, so that they leave no files behind.
 
@@ -49,8 +49,8 @@ A profile is a surface with one row::
 
 The file is described by the header. The revision, the data type, the manufacturer, the dates and
 the quantization step come from a template, and the representation from ``format``. The heights
-are stored as integers of ``data_type`` times ``z_scale``, which ``"auto"`` chooses as the
-smallest scale that fits the data::
+are stored as integers of ``data_type`` times ``z_scale``, which is by default the smallest
+scale that fits the data::
 
     >>> metadata = sdfio.Metadata(
     ...     revision=sdfio.Revision.ISO_2_0,
@@ -59,7 +59,7 @@ smallest scale that fits the data::
     ... )
     >>> buffer = io.BytesIO()
     >>> sdfio.write(
-    ...     buffer, heights, x_scale=2e-6, y_scale=3e-6, z_scale="auto",
+    ...     buffer, heights, x_scale=2e-6, y_scale=3e-6,
     ...     format=sdfio.FileFormat.ASCII, metadata=metadata,
     ... )
     >>> text = buffer.getvalue().decode("ascii")

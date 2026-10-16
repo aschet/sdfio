@@ -35,13 +35,12 @@ metadata = sdfio.Metadata(
 )
 trailer = sdfio.format_tagged_fields({"OperatorName": "Jane Doe", "PartName": "Gauge 7"})
 
-# Integer types store multiples of z_scale; "auto" takes the smallest scale that fits the data.
+# Integer types store multiples of z_scale. The default, "auto", is the smallest that fits the data.
 sdfio.write(
     folder / "surface_int16.sdf",
     surface,
     x_scale=1e-6,
     y_scale=1e-6,
-    z_scale="auto",
     metadata=metadata,
     trailer=trailer,
 )
@@ -58,7 +57,6 @@ for name, revision, data_type, file_format in variants:
         surface,
         x_scale=1e-6,
         y_scale=1e-6,
-        z_scale="auto",
         format=file_format,
         metadata=sdfio.Metadata(revision=revision, data_type=data_type),
         trailer=trailer,

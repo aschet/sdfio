@@ -34,7 +34,7 @@ import sdfio
 
 data = np.zeros((480, 640))
 
-sdfio.write("surface.sdf", data, x_scale=1e-6, y_scale=1e-6, z_scale=1e-9)
+sdfio.write("surface.sdf", data, x_scale=1e-6, y_scale=1e-6)
 
 sdf = sdfio.read("surface.sdf")
 print(sdf.data.shape)
