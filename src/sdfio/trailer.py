@@ -45,14 +45,11 @@ def _iter_tagged_fields(text: str, *, strict: bool) -> dict[str, str]:
 def parse_tagged_fields(text: str) -> dict[str, str]:
     """Parse "Name = Value" lines into a ``{name: value}`` dict.
 
-    This is the tagged field format the SDF header uses, and that a revision
-    for which :attr:`RevisionRules.requires_tagged_trailer` is ``True`` also
-    requires for the trailer on write (see :func:`validate_trailer_tagged`).
-    Blank lines are skipped; field names are kept exactly as written
-    (callers needing a case-insensitive lookup should match keys
-    case-insensitively themselves).
+    That is the form of the header, and the form that ISO-2.0 requires of the trailer on write.
+    Blank lines are skipped. Names are kept as written; compare them case-insensitively if
+    needed.
 
-    :raises SdfFormatError: If a non-blank line doesn't match "Name = Value".
+    :raises SdfFormatError: If a line is not "Name = Value".
     """
     return _iter_tagged_fields(text, strict=True)
 
@@ -63,29 +60,22 @@ def format_tagged_fields(fields: Mapping[str, str]) -> str:
 
 
 def sanitize_tagged_fields(text: str) -> str:
-    """Reformat ``text``, keeping only lines that already match "Name = Value".
+    """Reformat ``text``, keeping the lines that are "Name = Value" and leaving out the rest.
 
-    Unlike :func:`parse_tagged_fields`, this never raises: a non-blank line
-    that doesn't match "Name = Value" is silently dropped instead of
-    rejected. Useful for salvaging a trailer that's mostly, but not fully,
-    in the tagged format (e.g. converting a source file to a revision that
-    requires it) rather than discarding the whole thing.
+    Unlike :func:`parse_tagged_fields` this never raises, which salvages a trailer that is mostly
+    tagged, such as when converting a file to ISO-2.0.
     """
     return format_tagged_fields(_iter_tagged_fields(text, strict=False))
 
 
 def validate_trailer_tagged(revision: Revision, trailer: str | bytes) -> None:
-    """Reject a non-empty, non-tagged trailer for a revision that requires the tagged format.
+    """Reject a trailer that is not tagged, for a revision that requires it.
 
-    Enforced on write only (see :func:`validate_trailer_ascii` for the same
-    read/write split). An empty ``trailer`` is always accepted (the trailer
-    is optional), and a revision for which
-    :attr:`RevisionRules.requires_tagged_trailer` is ``False`` has no format
-    requirement for the trailer.
+    Only a write is checked; a file with another trailer is read. An empty trailer is always
+    accepted.
 
-    :raises SdfFormatError: If ``revision.rules.requires_tagged_trailer``, ``trailer``
-        is non-empty, and it is not valid "Name = Value" lines (see
-        :func:`parse_tagged_fields`).
+    :raises SdfFormatError: If :attr:`RevisionRules.requires_tagged_trailer` is ``True`` and the
+        trailer is not "Name = Value" lines, see :func:`parse_tagged_fields`.
     """
     if not revision.rules.requires_tagged_trailer or not trailer:
         return
@@ -101,14 +91,10 @@ def validate_trailer_tagged(revision: Revision, trailer: str | bytes) -> None:
 def validate_trailer_ascii(trailer: str | bytes) -> None:
     """Reject a trailer that is not 7-bit ASCII.
 
-    Record 3 (the trailer) is defined as "a sequence of ASCII values",
-    regardless of SDF revision or ASCII/binary file representation. Only
-    enforced on write -- a file that already has a non-ASCII trailer can
-    still be read; the trailer is secondary to the header/data area, which
-    is unaffected by it.
+    The standard defines record 3 as "a sequence of ASCII values" for every revision and
+    encoding. Only a write is checked; a file with another trailer is read.
 
-    :raises SdfFormatError: If ``trailer`` contains any non-ASCII byte or
-        character.
+    :raises SdfFormatError: If ``trailer`` has a non-ASCII byte or character.
     """
     if not trailer.isascii():
         raise SdfFormatError("SDF trailer must be 7-bit ASCII")

@@ -29,11 +29,8 @@ __all__ = [
 
 #: Fixed-width ``datetime`` field format, DDMMYYYYHHMM.
 _DATETIME_FORMAT = "%d%m%Y%H%M"
-# Neither spec defines an "unknown date" convention (unlike Zresolution,
-# which explicitly allows a negative value for that) -- this all-zero value
-# is undocumented, vendor-specific practice observed in real BCR files
-# (day/month 00 isn't a valid calendar date under DDMMYYYYHHMM either way),
-# treated here as "not recorded" rather than rejected outright.
+# Neither revision defines a date that is unknown. Files in practice, BCR ones among them, use all
+# zeros, which is no calendar date; it is read as "not recorded".
 _UNSET_DATETIME = "0" * len("DDMMYYYYHHMM")
 
 
@@ -54,16 +51,13 @@ def to_sdf_datetime(value: datetime | None) -> datetime | None:
 
 
 def format_sdf_datetime(value: datetime | None, revision: Revision | None = None) -> str:
-    """Format a datetime as the fixed-width SDF ``datetime`` field.
+    """Format a datetime as the ``datetime`` field of the file.
 
-    :param value: ``None`` is formatted as the all-zero "not recorded"
-        placeholder (see :func:`parse_sdf_datetime`). A naive value is taken
-        as local time; the seconds are not written, as the field has the
-        resolution of a minute.
-    :param revision: If :attr:`RevisionRules.requires_utc`, the field holds the
-        UTC wall clock. Otherwise, or if omitted, the revision stores local
-        time, so the field holds the wall clock of the system timezone (see
-        the limitation noted in :func:`parse_sdf_datetime`).
+    :param value: ``None`` becomes the all-zero "not recorded" placeholder. A naive value is
+        local time. The seconds are dropped, as the field has the resolution of a minute.
+    :param revision: A revision with :attr:`RevisionRules.requires_utc` gets the UTC clock.
+        Another one, or none, gets the clock of the system timezone, see
+        :func:`parse_sdf_datetime`.
     """
     utc = to_sdf_datetime(value)
     if utc is None:
@@ -74,24 +68,15 @@ def format_sdf_datetime(value: datetime | None, revision: Revision | None = None
 
 
 def parse_sdf_datetime(value: str, revision: Revision | None = None) -> datetime | None:
-    """Parse the fixed-width SDF ``datetime`` field; the result is always UTC.
+    """Parse the ``datetime`` field of a file; the result is UTC.
 
-    :param revision: If :attr:`RevisionRules.requires_utc`, the field is UTC.
-        Otherwise, or if omitted, the revision stores local time, which is
-        taken as the wall clock of the system timezone and converted to UTC.
-
-        This is only correct if the file is read on a system in the same
-        timezone it was written in -- neither format records the writer's
-        actual timezone, so there is no way to recover it otherwise. A file
-        moved to a different timezone before being read ends up with an
-        incorrect value; this is a limitation of the format, not something
-        sdfio can detect or correct.
-    :returns: ``None`` if ``value`` is the all-zero placeholder some files
-        use for a date that was never recorded, and also if it is not a date
-        in the form ``DDMMYYYYhhmm`` that the standard gives, such as a blank
-        field or a day 32. The date is secondary to the heights, so a file with
-        such a field is read, like one with a non-compliant trailer, and the
-        date is reported as not recorded.
+    :param revision: A revision with :attr:`RevisionRules.requires_utc` holds UTC. Another one,
+        or none, holds the clock of the system timezone, which is converted. That is only right
+        if the file is read in the timezone it was written in, because neither format records
+        it. This is a limit of the format.
+    :returns: ``None`` for the all-zero placeholder, and for a field that is no date of the form
+        ``DDMMYYYYhhmm``, such as a blank one or a day 32. The date matters less than the
+        heights, so such a file is read and the date is reported as not recorded.
     """
     stripped = value.strip()
     if (
@@ -110,53 +95,41 @@ def parse_sdf_datetime(value: str, revision: Revision | None = None) -> datetime
 
 
 def validate_manufacturer_id_ascii(manufacturer_id: str) -> None:
-    """Reject a manufacturer_id that is not 7-bit ASCII.
+    """Reject a manufacturer ID that is not 7-bit ASCII, as the standard has it.
 
-    ManufacID's data type is an ASCII character string per the standard,
-    regardless of SDF revision or ASCII/binary file representation. Oversized
-    values are silently truncated elsewhere (the binary field is
-    fixed-width); this only rejects characters that can't be represented as
-    ASCII at all.
-
-    :raises SdfFormatError: If ``manufacturer_id`` contains any non-ASCII
-        character.
+    :raises SdfFormatError: If ``manufacturer_id`` has a non-ASCII character.
     """
     if not manufacturer_id.isascii():
         raise SdfFormatError("manufacturer_id must be 7-bit ASCII")
 
 
 def validate_z_scale(z_scale: float) -> None:
-    """Reject a non-positive Z-scale factor.
+    """Reject a Z-scale that is not positive.
 
-    The standard specifies the Z-scale factor as "a non-zero positive number
-    to scale the coded height information".
+    The standard calls it "a non-zero positive number to scale the coded height information".
 
-    :raises SdfFormatError: If ``z_scale`` is not a positive number.
+    :raises SdfFormatError: If ``z_scale`` is not positive.
     """
     if z_scale <= 0:
         raise SdfFormatError(f"z_scale must be a positive number, got {z_scale!r}")
 
 
 def validate_compression(compression: int) -> None:
-    """Reject a compressed data area.
+    """Reject a compressed data area, which no revision is read or written with here.
 
-    No compression scheme (e.g. BCR's proposed RLL) is implemented for
-    any revision.
-
-    :raises SdfFormatError: If ``compression`` is nonzero.
+    :raises SdfFormatError: If ``compression`` is not 0.
     """
     if compression != 0:
         raise SdfFormatError("Compressed SDF data areas are not supported")
 
 
 def validate_check_type(check_type: int) -> None:
-    """Reject a checksummed data area.
+    """Reject a checksummed data area, which no revision is read or written with here.
 
-    No checksum scheme is implemented for any revision. BCR's
-    ``IntegerTrace`` checksum is an inline value trailing each profile in
-    the data area itself, not a value carried by the header.
+    The ``IntegerTrace`` checksum of BCR is a value after each profile in the data area, not a
+    value of the header.
 
-    :raises SdfFormatError: If ``check_type`` is nonzero.
+    :raises SdfFormatError: If ``check_type`` is not 0.
     """
     if check_type != 0:
         raise SdfFormatError("Checksummed SDF data areas are not supported")
