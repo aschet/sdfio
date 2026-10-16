@@ -20,11 +20,9 @@ from .header import (
     parse_sdf_datetime,
     validate_check_type,
     validate_compression,
-    validate_manufacturer_id_ascii,
-    validate_z_scale,
+    validate_for_write,
 )
 from .revision import ASCII_PREFIX, BINARY_PREFIX, MAGIC_SIZE, FileFormat, Revision
-from .trailer import validate_trailer_ascii, validate_trailer_tagged
 
 __all__ = ["HEADER_SIZE", "dump", "dumps", "load", "loads"]
 
@@ -170,11 +168,7 @@ def dump(header: Header, data: np.ndarray, fp: IO[bytes], trailer: bytes = b"") 
     """
     if header.revision not in _COUNTS_STRUCT:
         raise SdfFormatError(f"Unsupported SDF revision {header.revision!r}")
-    validate_z_scale(header.z_scale)
-    validate_manufacturer_id_ascii(header.manufacturer_id)
-    validate_trailer_ascii(trailer)
-    validate_trailer_tagged(header.revision, trailer)
-    data_type = require_supported_data_type(header.data_type, header.revision)
+    data_type = validate_for_write(header, trailer)
 
     fp.write(f"{BINARY_PREFIX}{header.revision}".encode("ascii"))
     fp.write(_pad(header.manufacturer_id, _MANUFACTURER_ID_SIZE))

@@ -9,9 +9,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from .datatypes import DataType
+from .datatypes import DataType, DataTypeInfo, require_supported_data_type
 from .exceptions import SdfFormatError, SdfVersionError
 from .revision import ASCII_PREFIX, BINARY_PREFIX, FileFormat, Revision
+from .trailer import validate_trailer_ascii, validate_trailer_tagged
 
 __all__ = [
     "Header",
@@ -159,6 +160,21 @@ def validate_check_type(check_type: int) -> None:
     """
     if check_type != 0:
         raise SdfFormatError("Checksummed SDF data areas are not supported")
+
+
+def validate_for_write(header: Header, trailer: str | bytes) -> DataTypeInfo:
+    """Reject what the file of ``header`` and ``trailer`` could not hold, for either encoding.
+
+    :returns: The data type of the header, which is supported by its revision.
+    :raises SdfFormatError: If the Z-scale is not positive, the manufacturer ID or the trailer is
+        not 7-bit ASCII, the trailer is not tagged where the revision requires it, or the data
+        type is unknown or not supported by the revision.
+    """
+    validate_z_scale(header.z_scale)
+    validate_manufacturer_id_ascii(header.manufacturer_id)
+    validate_trailer_ascii(trailer)
+    validate_trailer_tagged(header.revision, trailer)
+    return require_supported_data_type(header.data_type, header.revision)
 
 
 @dataclass

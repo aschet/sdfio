@@ -21,11 +21,10 @@ from .header import (
     parse_sdf_datetime,
     validate_check_type,
     validate_compression,
-    validate_manufacturer_id_ascii,
-    validate_z_scale,
+    validate_for_write,
 )
 from .revision import ASCII_PREFIX, BINARY_PREFIX, FileFormat, Revision
-from .trailer import parse_tagged_fields, validate_trailer_ascii, validate_trailer_tagged
+from .trailer import parse_tagged_fields
 
 __all__ = ["dump", "dumps", "load", "loads"]
 
@@ -278,11 +277,7 @@ def dumps(header: Header, data: np.ndarray, trailer: str = "") -> str:
     :func:`sdfio._numeric.format_scientific`). Use the binary format to
     avoid this.
     """
-    validate_z_scale(header.z_scale)
-    validate_manufacturer_id_ascii(header.manufacturer_id)
-    validate_trailer_ascii(trailer)
-    validate_trailer_tagged(header.revision, trailer)
-    data_type = require_supported_data_type(header.data_type, header.revision)
+    data_type = validate_for_write(header, trailer)
 
     lines = [f"{ASCII_PREFIX}{header.revision}"]
     fields = (
