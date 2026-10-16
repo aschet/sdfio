@@ -54,6 +54,13 @@ returns the `(N, 3)` array of points that point cloud libraries take.
 `sdfio.SdfFile.from_array` takes the arguments of `sdfio.write` and returns the file in memory
 without writing it, to change it first or to `save()` it later.
 
+`sdf.with_data(heights)` returns a copy with other heights, such as a crop, and
+`sdf.with_revision(revision, data_type=..., refit_z_scale=True)` a copy in another revision. The
+number of points and profiles of a file are the shape of `sdf.data`. `examples/modify.py` shows both.
+
+The header checks what it is given: the data type has to exist in the revision, the Z-scale has to
+be positive and the manufacturer ID 7-bit ASCII. Reading is more tolerant, see below.
+
 Non-measured or spurious points (the `BAD` marker in ASCII files, or the
 data type's reserved sentinel value in binary files) are represented as
 `NaN` in `sdf.data`, and `sdfio.write` writes `NaN` values back the same way.
