@@ -9,7 +9,7 @@ from __future__ import annotations
 import codecs
 import os
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from types import MappingProxyType
@@ -392,24 +392,17 @@ class SdfFile:
         """
         array = _as_grid(data)
         meta = metadata if metadata is not None else Metadata()
-        resolved_data_type = get_data_type(meta.data_type)
         resolved_z_scale = (
-            suggest_z_scale(array, resolved_data_type, meta.revision)
+            suggest_z_scale(array, get_data_type(meta.data_type), meta.revision)
             if z_scale == "auto"
             else z_scale
         )
         now = datetime.now(UTC)
+        template = {field.name: getattr(meta, field.name) for field in fields(Metadata)}
+        template["create_date"] = meta.create_date or now
+        template["mod_date"] = meta.mod_date or now
         header = Header(
-            revision=meta.revision,
-            format=format,
-            manufacturer_id=meta.manufacturer_id,
-            create_date=meta.create_date or now,
-            mod_date=meta.mod_date or now,
-            x_scale=x_scale,
-            y_scale=y_scale,
-            z_scale=resolved_z_scale,
-            z_resolution=meta.z_resolution,
-            data_type=resolved_data_type.type,
+            **template, format=format, x_scale=x_scale, y_scale=y_scale, z_scale=resolved_z_scale
         )
         return cls(header=header, data=array, trailer=trailer)
 

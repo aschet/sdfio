@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import UTC, datetime, timedelta, timezone
 
 import numpy as np
@@ -291,3 +292,9 @@ def test_order_rows_reverses_the_rows_for_bcr_only() -> None:
     data = np.array([[1.0], [2.0]])
     assert Revision.BCR_1_0.rules.order_rows(data).tolist() == [[2.0], [1.0]]
     assert Revision.ISO_2_0.rules.order_rows(data).tolist() == [[1.0], [2.0]]
+
+
+def test_every_field_of_a_template_is_a_field_of_the_header() -> None:
+    template = {field.name: field.default for field in dataclasses.fields(Metadata)}
+    header = {field.name for field in dataclasses.fields(Header)}
+    assert set(template) <= header
