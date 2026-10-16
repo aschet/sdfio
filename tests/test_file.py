@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 import sdfio
-from sdfio.datatypes import DataType
+from sdfio.datatypes import DataType, get_data_type, suggest_z_scale
 from sdfio.exceptions import SdfFormatError
 from sdfio.file import FileFormat
 from sdfio.header import SdfDialect
@@ -638,3 +638,66 @@ def test_from_array_leaves_the_checks_of_the_data_to_the_write() -> None:
 
     with pytest.raises(SdfFormatError, match="not valid for SDF dialect"):
         sdf.dumps()
+
+
+def _file(values: list[float], dialect: SdfDialect = SdfDialect.ISO_2_0) -> sdfio.SdfFile:
+    return sdfio.SdfFile.from_array(
+        np.array([values]),
+        x_scale=1e-6,
+        y_scale=1e-6,
+        z_scale=1e-9,
+        metadata=sdfio.SdfMetadata(dialect=dialect),
+    )
+
+
+def test_with_dialect_keeps_the_z_scale_by_default_so_a_write_can_fail() -> None:
+    converted = _file([0.0, 0.5]).with_dialect(SdfDialect.ISO_2_0, data_type=DataType.INT16)
+
+    assert converted.header.z_scale == 1e-9
+    with pytest.raises(SdfFormatError):
+        converted.dumps()
+
+
+def test_with_dialect_refits_a_z_scale_that_does_not_fit_the_new_data_type() -> None:
+    sdf = _file([0.0, 0.5, np.nan])
+    converted = sdf.with_dialect(SdfDialect.ISO_2_0, data_type=DataType.INT16, refit_z_scale=True)
+
+    assert converted.header.z_scale > 1e-9
+    assert converted.header.z_scale == suggest_z_scale(
+        sdf.data, get_data_type(DataType.INT16), SdfDialect.ISO_2_0
+    )
+    assert converted.raw_data() is not None  # it can be written now
+    np.testing.assert_array_equal(converted.data, sdf.data)  # the heights are not changed
+    assert converted.dumps()
+
+
+def test_with_dialect_keeps_a_z_scale_that_fits_even_when_refitting() -> None:
+    sdf = _file([0.0, 1e-6])  # 1000 steps of 1e-9, which int16 holds
+
+    converted = sdf.with_dialect(SdfDialect.ISO_2_0, data_type=DataType.INT16, refit_z_scale=True)
+
+    assert converted.header.z_scale == 1e-9
+
+
+def test_with_dialect_keeps_the_z_scale_for_a_type_that_holds_any_height() -> None:
+    converted = _file([0.0, 0.5]).with_dialect(
+        SdfDialect.ISO_2_0, data_type=DataType.BINARY64, refit_z_scale=True
+    )
+
+    assert converted.header.z_scale == 1e-9
+
+
+@pytest.mark.parametrize("dialect", list(SdfDialect))
+@pytest.mark.parametrize("data_type", [DataType.INT16, DataType.INT32])
+def test_with_dialect_refits_for_the_target_dialect(
+    dialect: SdfDialect, data_type: DataType
+) -> None:
+    # The dialects reserve a different value of an integer type for the points
+    # that are not measured, so the fit is that of the target dialect.
+    sdf = _file([-0.5, 0.0, 0.5, np.nan], dialect=SdfDialect.ISO_2_0)
+    converted = sdf.with_dialect(dialect, data_type=data_type, refit_z_scale=True)
+
+    assert converted.raw_data() is not None
+    assert converted.dumps()
+    read_back = sdfio.SdfFile.loads(converted.dumps())
+    np.testing.assert_allclose(read_back.data, converted.data, atol=converted.header.z_scale)

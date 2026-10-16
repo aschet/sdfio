@@ -181,10 +181,11 @@ class SdfFile:
         *,
         data_type: DataType | int | None = None,
         trailer: str | bytes | None = None,
+        refit_z_scale: bool = False,
     ) -> SdfFile:
         """Return a copy of this file retargeted to a different SDF dialect.
 
-        Converting between dialects can fail for two reasons, each resolved
+        Converting between dialects can fail for three reasons, each resolved
         by an explicit, opt-in parameter rather than silently guessing:
 
         - ``data_type``: some data types are dialect-restricted (e.g.
@@ -196,6 +197,12 @@ class SdfFile:
           all; others have no such requirement. If the current trailer
           wouldn't be valid for ``dialect``, pass a replacement (e.g. ``""``
           to drop it).
+        - ``refit_z_scale``: the data may not fit the new data type with the
+          current ``z_scale``, for example when ``binary64`` becomes ``int16``,
+          which the file would only report when it is written. With
+          ``refit_z_scale=True`` the ``z_scale`` is kept if the data fits the new
+          data type in ``dialect``, and otherwise replaced by the smallest one that
+          does, see :func:`sdfio.datatypes.suggest_z_scale`. The data is not changed.
 
         Timestamps need no such parameter: ``create_date``/``mod_date`` are
         held as UTC for every dialect and are converted to the convention of
@@ -225,6 +232,17 @@ class SdfFile:
             >>> retyped = sdf.with_dialect(sdf.header.dialect, data_type=sdfio.DataType.INT16)
             >>> retyped.data_type.name
             'INT16'
+
+        Heights that do not fit the new data type at the old ``z_scale`` are
+        scaled so that they do, with ``refit_z_scale``::
+
+            >>> tall = sdfio.SdfFile.from_array(
+            ...     np.array([[0.0, 0.5]]), x_scale=1e-6, y_scale=1e-6, z_scale=1e-9
+            ... )
+            >>> tall.with_dialect(
+            ...     sdfio.SdfDialect.ISO_2_0, data_type=sdfio.DataType.INT16, refit_z_scale=True
+            ... ).header.z_scale > 1e-9
+            True
         """
         resolved_data_type = get_data_type(
             self.header.data_type if data_type is None else data_type
@@ -238,10 +256,18 @@ class SdfFile:
         new_trailer = self.trailer if trailer is None else trailer
         validate_trailer_tagged(dialect, new_trailer)
 
+        z_scale = self.header.z_scale
+        if refit_z_scale:
+            try:
+                encode_raw(self.data, resolved_data_type, z_scale, dialect)
+            except SdfFormatError:  # the data does not fit the new type at this scale
+                z_scale = suggest_z_scale(self.data, resolved_data_type, dialect)
+
         new_header = replace(
             self.header,
             dialect=dialect,
             data_type=resolved_data_type.type,
+            z_scale=z_scale,
         )
         return SdfFile(header=new_header, data=self.data, trailer=new_trailer)
 
