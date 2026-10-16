@@ -759,3 +759,13 @@ def test_the_repr_of_a_file_is_one_line_in_angle_brackets() -> None:
     assert repr(sdf) == "<SdfFile BCR-1.0 ascii, 480 profiles x 640 points, int16>"
     profile = sdfio.SdfFile.from_array(np.zeros((1, 1)), x_scale=1e-6, y_scale=1e-6)
     assert repr(profile) == "<SdfFile ISO-2.0 binary, 1 profile x 1 point, binary64>"
+
+
+def test_a_bad_value_and_a_bad_file_are_value_errors() -> None:
+    with pytest.raises(ValueError, match="positive"):
+        sdfio.Header(z_scale=-1.0)
+    with pytest.raises(ValueError, match="Not an SDF file"):
+        sdfio.SdfFile.loads(b"not an SDF file at all")
+    with pytest.raises(ValueError, match="Unsupported SDF revision"):
+        sdfio.Header(revision="3.0")  # type: ignore[arg-type]
+    assert issubclass(sdfio.SdfVersionError, sdfio.SdfFormatError)
