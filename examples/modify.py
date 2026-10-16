@@ -1,6 +1,5 @@
 """Change a file, make files of parts of it, and convert it: python examples/modify.py."""
 
-import dataclasses
 import io
 
 import numpy as np
@@ -14,18 +13,14 @@ sdf = sdfio.SdfFile.from_array(heights, x_scale=1e-6, y_scale=1e-6)
 # The data is the file's own NumPy array.
 sdf.data -= sdf.data.mean()
 
-# A crop is a new file with a header of the new size.
-crop = sdf.data[50:150, 100:250].copy()
-header = dataclasses.replace(sdf.header, num_profiles=crop.shape[0], num_points=crop.shape[1])
-part = sdfio.SdfFile(header=header, data=crop, trailer=sdf.trailer)
+# The part keeps the header and trailer; the counts follow the data.
+part = sdf.with_data(sdf.data[50:150, 100:250])
 
 # Every second point, with the matching scale.
-coarse = sdf.data[:, ::2].copy()
-header = dataclasses.replace(sdf.header, num_points=coarse.shape[1], x_scale=2 * sdf.header.x_scale)
-coarse = sdfio.SdfFile(header=header, data=coarse, trailer=sdf.trailer)
+coarse = sdf.with_data(sdf.data[:, ::2], x_scale=2 * sdf.header.x_scale)
 
 # A slice keeps the row axis, so a row is a profile.
-row = sdfio.SdfFile.from_array(sdf.data[40:41], x_scale=1e-6, y_scale=1e-6)
+row = sdf.with_data(sdf.data[40:41])
 print("crop:", part.data.shape, "coarse:", coarse.data.shape, "row is a profile:", row.is_profile)
 
 # A z scale that does not fit the new type is kept by default and the file can't be written;

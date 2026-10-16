@@ -725,3 +725,19 @@ def test_an_ascii_file_with_a_utf8_byte_order_mark_is_read(revision: Revision) -
 def test_a_file_that_is_only_a_byte_order_mark_is_not_an_sdf_file() -> None:
     with pytest.raises(SdfFormatError, match="unexpected magic"):
         sdfio.SdfFile.loads(b"\xef\xbb\xbf")
+
+
+def test_with_data_follows_the_shape_and_keeps_the_rest() -> None:
+    sdf = sdfio.SdfFile.from_array(np.zeros((4, 6)), x_scale=1e-6, y_scale=2e-6, trailer="Note = a")
+    part = sdf.with_data(np.ones((2, 3)), x_scale=3e-6)
+    assert (part.header.num_profiles, part.header.num_points) == (2, 3)
+    assert (part.header.x_scale, part.header.y_scale) == (3e-6, 2e-6)
+    assert part.header.create_date == sdf.header.create_date
+    assert part.trailer == "Note = a"
+    assert sdf.data.shape == (4, 6)
+
+
+def test_with_data_rejects_data_that_is_not_two_dimensional() -> None:
+    sdf = sdfio.SdfFile.from_array(np.zeros((2, 2)), x_scale=1e-6, y_scale=1e-6)
+    with pytest.raises(SdfFormatError, match="2-D"):
+        sdf.with_data(np.zeros(3))

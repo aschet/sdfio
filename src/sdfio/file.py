@@ -265,6 +265,43 @@ class SdfFile:
         )
         return SdfFile(header=new_header, data=self.data, trailer=new_trailer)
 
+    def with_data(
+        self,
+        data: np.ndarray,
+        *,
+        x_scale: float | None = None,
+        y_scale: float | None = None,
+    ) -> SdfFile:
+        """Return a copy with other heights, for example a part of this file.
+
+        The number of points and profiles follow the shape of ``data``; the rest of the header
+        and the trailer are kept. Like :meth:`from_array`, this only checks the shape of
+        ``data``; whether it fits the data type and the ``z_scale`` is checked when the file is
+        written.
+
+        :param data: ``(num_profiles, num_points)`` array of height values in metres.
+        :param x_scale: New sampling interval along x, in metres, if it is not the one of the file.
+        :param y_scale: New sampling interval along y, in metres, if it is not the one of the file.
+        :raises SdfFormatError: If ``data`` is not 2-D.
+
+        >>> import numpy as np
+        >>> sdf = SdfFile.from_array(np.zeros((4, 6)), x_scale=1e-6, y_scale=1e-6)
+        >>> part = sdf.with_data(sdf.data[1:3, ::2], x_scale=2e-6)
+        >>> part.data.shape, part.header.num_profiles, part.header.num_points, part.header.x_scale
+        ((2, 3), 2, 3, 2e-06)
+        """
+        array = np.asarray(data, dtype=np.float64)
+        if array.ndim != 2:
+            raise SdfFormatError("SDF data must be a 2-D (num_profiles, num_points) array")
+        header = replace(
+            self.header,
+            num_profiles=array.shape[0],
+            num_points=array.shape[1],
+            x_scale=self.header.x_scale if x_scale is None else x_scale,
+            y_scale=self.header.y_scale if y_scale is None else y_scale,
+        )
+        return SdfFile(header=header, data=array, trailer=self.trailer)
+
     def raw_data(self) -> np.ndarray:
         """Coded height values in the file's native on-disk dtype.
 
