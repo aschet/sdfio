@@ -12,16 +12,11 @@ from typing import IO
 
 import numpy as np
 
+from ._dates import format_sdf_datetime, parse_sdf_datetime
+from ._validation import validate_check_type, validate_compression, validate_for_write
 from .datatypes import decode_raw, encode_raw, require_supported_data_type
 from .exceptions import SdfFormatError
-from .header import (
-    Header,
-    format_sdf_datetime,
-    parse_sdf_datetime,
-    validate_check_type,
-    validate_compression,
-    validate_for_write,
-)
+from .header import Header
 from .revision import ASCII_PREFIX, BINARY_PREFIX, MAGIC_SIZE, FileFormat, Revision
 
 __all__ = ["HEADER_SIZE", "dump", "dumps", "load", "loads"]

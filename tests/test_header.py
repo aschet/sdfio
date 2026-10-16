@@ -11,8 +11,9 @@ import numpy as np
 import pytest
 
 import sdfio
+from sdfio._dates import format_sdf_datetime, parse_sdf_datetime
 from sdfio.exceptions import SdfVersionError
-from sdfio.header import Header, Metadata, format_sdf_datetime, parse_sdf_datetime
+from sdfio.header import Header, Metadata
 from sdfio.revision import MAGICS, FileFormat, Revision
 from sdfio.trailer import sanitize_tagged_fields
 
