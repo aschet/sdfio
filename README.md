@@ -56,7 +56,9 @@ without writing it, to change it first or to `save()` it later.
 
 `sdf.with_data(heights)` returns a copy with other heights, such as a crop, and
 `sdf.with_revision(revision, data_type=..., refit_z_scale=True)` a copy in another revision. The
-number of points and profiles of a file are the shape of `sdf.data`. `examples/modify.py` shows both.
+number of points and profiles of a file are the shape of `sdf.data`. The copies share the heights
+with the original, so a crop is a view; use `.copy()` on the heights to edit them independently.
+`examples/modify.py` shows both.
 
 The header checks what it is given: the data type has to exist in the revision, the Z-scale has to
 be positive and the manufacturer ID 7-bit ASCII. Reading is more tolerant, see below.

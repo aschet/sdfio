@@ -13,7 +13,7 @@ sdf = sdfio.SdfFile.from_array(heights, x_scale=1e-6, y_scale=1e-6)
 # The data is the file's own NumPy array.
 sdf.data -= sdf.data.mean()
 
-# The part keeps the header and trailer; the counts follow the data.
+# The part keeps the header and trailer, and shares the heights with sdf.
 part = sdf.with_data(sdf.data[50:150, 100:250])
 
 # Every second point, with the matching scale.

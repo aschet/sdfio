@@ -162,7 +162,8 @@ class SdfFile:
           :func:`sdfio.datatypes.suggest_z_scale`. The data is not changed.
 
         The dates need no parameter. They are UTC in every revision and converted to the
-        convention of the revision when the file is written.
+        convention of the revision when the file is written. The header is new; the data is
+        shared with this file, not copied.
 
         :raises SdfFormatError: If ``data_type`` or the trailer doesn't fit ``revision``.
 
@@ -228,7 +229,9 @@ class SdfFile:
 
         The rest of the header and the trailer are kept. Like :meth:`from_array`, this only
         checks the shape of ``data``; whether it fits the data type and the ``z_scale`` is checked
-        when the file is written.
+        when the file is written. ``float64`` data is shared, not copied, so a slice of this
+        file's data is a view of it: changing the part changes this file. Copy it first with
+        ``.copy()`` to avoid that.
 
         :param data: ``(num_profiles, num_points)`` array of height values in metres.
         :param x_scale: New sampling interval along x, in metres, if it is not the one of the file.
