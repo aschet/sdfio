@@ -16,16 +16,10 @@ import numpy as np
 from numpy.typing import ArrayLike, NDArray
 
 from . import _io
-from .datatypes import (
-    DataType,
-    encode_raw,
-    get_data_type,
-    require_supported_data_type,
-    suggest_z_scale,
-)
+from ._datatypes import encode_raw, get_data_type, require_supported_data_type, suggest_z_scale
 from .exceptions import SdfFormatError
 from .header import Header, Metadata
-from .revision import FileFormat, Revision
+from .revision import DataType, FileFormat, Revision
 from .trailer import (
     format_tagged_fields,
     parse_tagged_fields,
@@ -176,7 +170,7 @@ class SdfFile:
         - ``refit_z_scale``: the data may not fit the new data type at the current ``z_scale``,
           which the write would report. With ``True`` the ``z_scale`` is kept if the data fits,
           and otherwise replaced by the smallest that does, see
-          :func:`sdfio.datatypes.suggest_z_scale`. The data is not changed.
+          :func:`sdfio.suggest_z_scale`. The data is not changed.
 
         The dates need no parameter. They are UTC in every revision and converted to the
         convention of the revision when the file is written. The header is new; the data is
@@ -331,7 +325,7 @@ class SdfFile:
         :param y_scale: Sampling interval along y, in metres.
         :param z_scale: Scale factor of the coded heights, or ``"auto"`` (the default) for the
             smallest that fits ``data`` into ``metadata.data_type``, which is 1 for a float
-            type, see :func:`sdfio.datatypes.suggest_z_scale`.
+            type, see :func:`sdfio.suggest_z_scale`.
         :param format: The encoding, which becomes :attr:`Header.format`.
         :param metadata: Header template, shared by files that have the same metadata, such as
             ``Metadata(manufacturer_id="acme")``. The defaults are ISO-2.0, ``binary64`` and the
@@ -441,7 +435,7 @@ def write(
     :param y_scale: Sampling interval along y, in metres.
     :param z_scale: Scale factor of the coded heights, or ``"auto"`` (the default) for the
         smallest that fits ``data`` into ``metadata.data_type``, which is 1 for a float type, see
-        :func:`sdfio.datatypes.suggest_z_scale`.
+        :func:`sdfio.suggest_z_scale`.
     :param format: The encoding, ASCII or binary.
     :param metadata: Header template, shared by files that have the same metadata, such as
         ``Metadata(manufacturer_id="acme")``. The defaults are ISO-2.0, ``binary64`` and the

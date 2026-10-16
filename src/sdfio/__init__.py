@@ -98,11 +98,11 @@ A file is converted to another revision, data type or representation with
 
 from __future__ import annotations
 
-from .datatypes import DataType, suggest_z_scale
+from ._datatypes import suggest_z_scale
 from .exceptions import SdfError, SdfFormatError, SdfVersionError
 from .file import SdfFile, read, write
 from .header import Header, Metadata
-from .revision import MAGICS, FileFormat, Revision, RevisionRules
+from .revision import MAGICS, DataType, FileFormat, Revision, RevisionRules
 from .trailer import (
     format_tagged_fields,
     parse_tagged_fields,

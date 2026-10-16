@@ -204,7 +204,7 @@ class RevisionRules:
         the minimum of a data type, and the 1993 BCR proposal the maximum, since it still had
         unsigned integer types whose minimum (0) is a valid low bound.
     :param data_types: The data types the revision has, by their codes.
-    :param ascii: What the ASCII encoding allows, see :class:`AsciiRules`.
+    :param ascii_files: What the ASCII encoding allows, see :class:`AsciiRules`.
     :param reverses_profile_order: Whether the first profile stored on disk is at the maximum y,
         not at y=0. BCR never fixed a direction; ISO 25178-71 fixed row 1 at y=0. This reflects
         observed behaviour, not a requirement: MountainsMap renders BCR-1.0 with the first
@@ -224,7 +224,7 @@ class RevisionRules:
     requires_tagged_trailer: bool
     sentinel: Sentinel
     data_types: tuple[DataType, ...]
-    ascii: AsciiRules
+    ascii_files: AsciiRules
     reverses_profile_order: bool
 
     def order_rows(self, data: NDArray[np.float64]) -> NDArray[np.float64]:
@@ -242,7 +242,7 @@ _ISO_1_0_RULES = RevisionRules(
     requires_tagged_trailer=False,
     sentinel=MinimumSentinel(),
     data_types=(DataType.INT16, DataType.INT32, DataType.BINARY64),
-    ascii=AsciiRules(comments=False, symbolic_header_values=False, invalid_token=True),
+    ascii_files=AsciiRules(comments=False, symbolic_header_values=False, invalid_token=True),
     reverses_profile_order=False,
 )
 _RULES = {
@@ -257,7 +257,7 @@ _RULES = {
     Revision.BCR_1_0: replace(
         _ISO_1_0_RULES,
         sentinel=MaximumSentinel(),
-        ascii=AsciiRules(comments=True, symbolic_header_values=True, invalid_token=False),
+        ascii_files=AsciiRules(comments=True, symbolic_header_values=True, invalid_token=False),
         reverses_profile_order=True,
         data_types=tuple(DataType),
     ),

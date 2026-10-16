@@ -13,9 +13,9 @@ from typing import IO
 import numpy as np
 from numpy.typing import NDArray
 
+from ._datatypes import decode_raw, encode_raw, require_supported_data_type
 from ._dates import format_sdf_datetime, parse_sdf_datetime
 from ._validation import validate_check_type, validate_compression, validate_for_write
-from .datatypes import decode_raw, encode_raw, require_supported_data_type
 from .exceptions import SdfFormatError
 from .header import Header
 from .revision import ASCII_PREFIX, BINARY_PREFIX, MAGIC_SIZE, FileFormat, Revision

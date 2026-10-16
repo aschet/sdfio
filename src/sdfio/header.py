@@ -10,11 +10,11 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Literal
 
+from ._datatypes import get_data_type, require_supported_data_type
 from ._dates import to_sdf_datetime
 from ._validation import validate_manufacturer_id_ascii, validate_z_scale
-from .datatypes import DataType, get_data_type, require_supported_data_type
 from .exceptions import SdfVersionError
-from .revision import ASCII_PREFIX, BINARY_PREFIX, FileFormat, Revision
+from .revision import ASCII_PREFIX, BINARY_PREFIX, DataType, FileFormat, Revision
 
 __all__ = ["Header", "Metadata"]
 
@@ -70,7 +70,7 @@ class Header:
         ``z_scale``: data can be rescaled or reprocessed (e.g. datum removal)
         after acquisition, changing ``z_scale``, while ``z_resolution``
         stays as a record of the instrument's original base resolution.
-    :param data_type: ``DataType`` code, see :mod:`sdfio.datatypes`.
+    :param data_type: ``DataType`` code, see :class:`DataType`.
     :raises SdfVersionError: If ``revision`` is not a valid :class:`Revision`
         member.
     :raises TypeError: If ``format`` is not a :class:`FileFormat` member.
@@ -148,7 +148,7 @@ class Metadata:
     :param mod_date: Modification timestamp, held and defaulting like ``create_date``.
     :param z_resolution: Quantization step in metres, or a negative value if
         unknown.
-    :param data_type: ``DataType`` code, see :mod:`sdfio.datatypes`; must be
+    :param data_type: ``DataType`` code, see :class:`DataType`; must be
         valid for ``revision``.
     """
 

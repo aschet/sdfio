@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .datatypes import DataTypeInfo, require_supported_data_type
+from ._datatypes import DataTypeInfo, require_supported_data_type
 from .exceptions import SdfFormatError
 from .trailer import validate_trailer_ascii, validate_trailer_tagged
 

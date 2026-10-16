@@ -14,11 +14,10 @@ import pytest
 
 import sdfio
 from sdfio import _binary
-from sdfio.datatypes import DataType
 from sdfio.exceptions import SdfFormatError, SdfVersionError
 from sdfio.file import SdfFile
 from sdfio.header import Header
-from sdfio.revision import MAGIC_SIZE, FileFormat, Revision
+from sdfio.revision import MAGIC_SIZE, DataType, FileFormat, Revision
 
 
 def _make_header(**overrides: Any) -> Header:

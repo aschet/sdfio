@@ -12,10 +12,9 @@ from collections.abc import Sequence
 from datetime import datetime
 
 from . import __version__
-from .datatypes import DataType
 from .exceptions import SdfError, SdfFormatError
 from .file import read
-from .revision import FileFormat, Revision
+from .revision import DataType, FileFormat, Revision
 from .trailer import (
     format_tagged_fields,
     parse_tagged_fields,

@@ -7,8 +7,7 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from sdfio.datatypes import (
-    DataType,
+from sdfio._datatypes import (
     decode_raw,
     encode_raw,
     get_data_type,
@@ -16,7 +15,7 @@ from sdfio.datatypes import (
     validate_data_range,
 )
 from sdfio.exceptions import SdfFormatError
-from sdfio.revision import Revision
+from sdfio.revision import DataType, Revision
 
 
 def test_get_data_type_by_code() -> None:

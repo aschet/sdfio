@@ -13,13 +13,13 @@ from typing import IO
 import numpy as np
 from numpy.typing import NDArray
 
+from ._datatypes import DataTypeInfo, require_supported_data_type, validate_data_range
 from ._dates import format_sdf_datetime, parse_sdf_datetime
 from ._numeric import format_scientific
 from ._validation import validate_check_type, validate_compression, validate_for_write
-from .datatypes import DataType, DataTypeInfo, require_supported_data_type, validate_data_range
 from .exceptions import SdfFormatError
 from .header import Header
-from .revision import ASCII_PREFIX, BINARY_PREFIX, FileFormat, Revision
+from .revision import ASCII_PREFIX, BINARY_PREFIX, DataType, FileFormat, Revision
 from .trailer import parse_tagged_fields
 
 __all__ = ["dump", "dumps", "load", "loads"]
@@ -72,7 +72,7 @@ def _split_records(remainder: str, revision: Revision) -> list[str]:
     # delimiter with its newlines cannot tell an empty record ("*<CRLF>*<CRLF>") from one
     # delimiter. With comments, a "*" followed by a comment still ends its record, and the
     # comment is dropped from the first two records; the trailer is free text and kept as it is.
-    comments = revision.rules.ascii.comments
+    comments = revision.rules.ascii_files.comments
     records = []
     current: list[str] = []
     for line in _LINE_SPLIT_RE.split(remainder):
@@ -110,7 +110,7 @@ def _parse_coded(
     try:
         return int(value)
     except ValueError:
-        if revision.rules.ascii.symbolic_header_values and value.upper() in symbols:
+        if revision.rules.ascii_files.symbolic_header_values and value.upper() in symbols:
             return int(symbols[value.upper()])
         raise SdfFormatError(
             f"Invalid integer value for SDF header field {name!r}: {value!r}"
@@ -149,7 +149,7 @@ def loads(text: str) -> tuple[Header, NDArray[np.float64], str]:
     family_text = magic_match.group("family")
     version_text = magic_match.group("version")
     revision = Revision.resolve(family_text, version_text, magic_line)
-    if _COMMENT_MARKER in magic_line and not revision.rules.ascii.comments:
+    if _COMMENT_MARKER in magic_line and not revision.rules.ascii_files.comments:
         raise SdfFormatError(f"Not an ASCII SDF file, unexpected magic: {magic_line!r}")
 
     records = _split_records(remainder, revision)
@@ -214,7 +214,7 @@ def _parse_data(
                 raise SdfFormatError(f"Invalid data value at position {index}: {token!r}") from None
 
     invalid_mask = np.isnan(values)
-    if not header.revision.rules.ascii.invalid_token:
+    if not header.revision.rules.ascii_files.invalid_token:
         # BCR marks a bad point with the type's maximum value, as a number.
         invalid_mask |= data_type.is_invalid(values, header.revision)
     # NaN before scaling: a huge marker value could overflow when scaled.
@@ -234,7 +234,7 @@ def load(fp: IO[str]) -> tuple[Header, NDArray[np.float64], str]:
 
 def _format_value(value: float, data_type: DataTypeInfo, revision: Revision) -> str:
     if np.isnan(value):
-        if revision.rules.ascii.invalid_token:
+        if revision.rules.ascii_files.invalid_token:
             return _INVALID_MARKER
         value = data_type.ascii_invalid_value(revision)
     if data_type.type == DataType.BINARY32:

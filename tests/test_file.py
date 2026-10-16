@@ -12,9 +12,9 @@ import numpy as np
 import pytest
 
 import sdfio
-from sdfio.datatypes import DataType, suggest_z_scale
+from sdfio._datatypes import suggest_z_scale
 from sdfio.exceptions import SdfFormatError
-from sdfio.revision import FileFormat, Revision
+from sdfio.revision import DataType, FileFormat, Revision
 
 
 def _sample_data() -> np.ndarray:
