@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import io
 import struct
+import warnings
 from typing import Any
 
 import numpy as np
@@ -412,3 +413,35 @@ def test_a_binary_file_cut_anywhere_never_raises_anything_but_a_format_error(
             assert length < data_end  # a shorter trailer is still a valid file
         else:
             assert length >= data_end
+
+
+@pytest.mark.parametrize("dialect", list(SdfDialect))
+def test_a_header_that_names_more_data_than_any_file_holds_is_a_format_error(
+    dialect: SdfDialect,
+) -> None:
+    blob = bytearray(_binary_file(dialect))
+    counts = _binary._COUNTS_STRUCT[dialect]
+    offset = 8 + 10 + 24  # the magic, the manufacturer's ID and the two dates
+    largest = dialect.max_binary_count
+    blob[offset : offset + counts.size] = counts.pack(largest, largest)
+
+    with pytest.raises(SdfFormatError, match="Unexpected end of file"):
+        sdfio.SdfFile.loads(bytes(blob))
+
+
+@pytest.mark.parametrize("z_scale", [float("inf"), float("-inf"), float("nan"), 1e308, 0.0, -1.0])
+@pytest.mark.parametrize("data_type", [DataType.INT16, DataType.BINARY64])
+def test_a_z_scale_without_a_sensible_product_is_read_without_a_warning(
+    z_scale: float, data_type: DataType
+) -> None:
+    # The writer refuses such a scale, so a file that holds one is made by hand.
+    header = SdfHeader(num_points=3, num_profiles=2, z_scale=1e-9, data_type=data_type)
+    valid = sdfio.SdfFile(header=header, data=np.zeros((2, 3))).dumps()
+    scale_at = 8 + 10 + 24 + 8 + 8 + 8  # up to Zscale in a version 2.0 header
+    blob = valid[:scale_at] + struct.pack("<d", z_scale) + valid[scale_at + 8 :]
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        loaded = sdfio.SdfFile.loads(blob)
+
+    assert loaded.data.shape == (2, 3)

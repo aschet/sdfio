@@ -238,7 +238,8 @@ def _parse_data(data_text: str, header: SdfHeader, data_type: SdfDataType) -> np
         invalid_mask |= data_type.is_invalid(values, header.dialect)
     # NaN before scaling: a huge marker value could overflow when scaled.
     values[invalid_mask] = np.nan
-    data = (values * header.z_scale).reshape(header.num_profiles, header.num_points)
+    with np.errstate(invalid="ignore", over="ignore"):  # see decode_raw
+        data = (values * header.z_scale).reshape(header.num_profiles, header.num_points)
     return data[::-1] if header.dialect.reverses_profile_order else data
 
 

@@ -247,7 +247,10 @@ def decode_raw(
     # NaN before scaling: a huge marker value could overflow when scaled.
     scaled = raw.astype(np.float64)
     scaled[invalid_mask] = np.nan
-    return scaled * z_scale
+    # A file can hold any ``z_scale``, such as an infinite one, whose product is not a number:
+    # that is the file's content, not something to warn about while reading it.
+    with np.errstate(invalid="ignore", over="ignore"):
+        return scaled * z_scale
 
 
 def suggest_z_scale(

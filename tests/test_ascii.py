@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import io
 import re
+import warnings
 from dataclasses import replace
 
 import numpy as np
@@ -540,3 +541,22 @@ def test_dumps_bcr_writes_bad_data_as_number_not_token(data_type: DataType) -> N
     # ISO keeps the BAD token.
     iso_text = _ascii.dumps(replace(header, dialect=SdfDialect.ISO_2_0), np.array([[1.0, np.nan]]))
     assert "BAD" in iso_text
+
+
+@pytest.mark.parametrize("z_scale", ["1e999", "-1e999", "nan", "inf", "0"])
+def test_an_ascii_z_scale_without_a_sensible_product_is_read_without_a_warning(
+    z_scale: str,
+) -> None:
+    text = (
+        "aISO-2.0\r\nManufacID = sdfio\r\nCreateDate = 051020261200\r\n"
+        "ModDate = 051020261200\r\nNumPoints = 2\r\nNumProfiles = 1\r\n"
+        f"Xscale = 1e-6\r\nYscale = 1e-6\r\nZscale = {z_scale}\r\nZresolution = -1\r\n"
+        "Compression = 0\r\nDataType = 6\r\nCheckType = 0\r\n*\r\n0 1\r\n*\r\n*\r\n"
+    )
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("error")
+        header, data, _ = _ascii.loads(text)
+
+    assert data.shape == (1, 2)
+    assert header.num_points == 2

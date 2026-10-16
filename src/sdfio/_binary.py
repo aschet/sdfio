@@ -147,12 +147,15 @@ def load(fp: IO[bytes]) -> tuple[SdfHeader, np.ndarray, bytes]:
         data_type=data_type_code,
     )
 
+    # The data area and the trailer are read together and split, instead of asking for the size
+    # that the header claims: a damaged header can name a size that no file holds, which is not
+    # something to pass to read().
     count = header.num_points * header.num_profiles
     byte_count = count * data_type.dtype.itemsize
-    raw_bytes = fp.read(byte_count)
-    if len(raw_bytes) != byte_count:
+    rest = fp.read()
+    if len(rest) < byte_count:
         raise SdfFormatError("Unexpected end of file while reading the SDF data area")
-    raw = np.frombuffer(raw_bytes, dtype=data_type.dtype)
+    raw = np.frombuffer(rest, dtype=data_type.dtype, count=count)
     data = decode_raw(raw, data_type, header.z_scale, dialect).reshape(
         header.num_profiles, header.num_points
     )
@@ -163,7 +166,7 @@ def load(fp: IO[bytes]) -> tuple[SdfHeader, np.ndarray, bytes]:
     # the header/data area, and a non-compliant trailer in an otherwise
     # valid file shouldn't prevent reading the (already successfully
     # decoded) depth data.
-    trailer = fp.read()
+    trailer = rest[byte_count:]
     return header, data, trailer
 
 

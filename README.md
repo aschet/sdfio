@@ -83,6 +83,10 @@ Reading tolerates known real-world deviations from the standard:
 - A trailer that isn't 7-bit ASCII is returned as-is, not rejected.
 - A `binary32`/`binary64` value written as `NaN` instead of the sentinel still decodes as a
   non-measured point.
+- `Xscale`, `Yscale` and `Zscale` are read as they are, also when they are zero, negative or not
+  finite; the heights are then as meaningless as the scale, but never an error or a warning.
+  Writing rejects such a `Zscale`.
+- A file with no columns or no rows is read as empty data.
 
 ## Documentation
 
