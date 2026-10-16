@@ -27,9 +27,7 @@ def test_an_example_runs_and_says_something(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    if script.stem == "plot":
-        pytest.importorskip("matplotlib")
-        monkeypatch.setenv("MPLBACKEND", "Agg")
+    monkeypatch.setenv("MPLBACKEND", "Agg")
     # write.py takes the folder to write to, and plot.py the file of the figure.
     arguments = {"write": [str(tmp_path / "out")], "plot": [str(tmp_path / "figure.png")]}
     monkeypatch.setattr(sys, "argv", [str(script), *arguments.get(script.stem, [])])

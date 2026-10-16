@@ -47,6 +47,7 @@ sdfio = "sdfio.cli:main"
 dev = [
     "bandit[toml]>=1.7",
     "build>=1.2",
+    "matplotlib>=3.8",
     "mypy>=1.10",
     "pip-audit>=2.7",
     "pre-commit>=3.7",
