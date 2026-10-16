@@ -16,7 +16,7 @@ from sdfio import _binary
 from sdfio.datatypes import DataType
 from sdfio.exceptions import SdfFormatError
 from sdfio.file import SdfFile
-from sdfio.header import SdfDialect, SdfHeader
+from sdfio.header import MAGIC_SIZE, SdfDialect, SdfHeader
 
 
 def _make_header(**overrides: Any) -> SdfHeader:
@@ -367,3 +367,45 @@ def test_binary_files_of_the_older_dialects_hold_at_most_the_max_count(
     with pytest.raises(SdfFormatError, match=str(limit)):
         write(limit + 1, binary=True)
     assert sdfio.SdfFile.loads(write(limit + 1, binary=False)).header.num_points == limit + 1
+
+
+def _binary_file(dialect: SdfDialect) -> bytes:
+    buffer = io.BytesIO()
+    sdfio.write(
+        buffer,
+        np.arange(6, dtype=np.float64).reshape(2, 3) * 1e-6,
+        x_scale=1e-6,
+        y_scale=1e-6,
+        z_scale=1e-9,
+        metadata=sdfio.SdfMetadata(dialect=dialect, data_type=DataType.INT16),
+        trailer="a = b" if dialect is SdfDialect.ISO_2_0 else "free",
+    )
+    return buffer.getvalue()
+
+
+@pytest.mark.parametrize("dialect", list(SdfDialect))
+def test_a_binary_file_that_ends_in_the_header_is_a_format_error(dialect: SdfDialect) -> None:
+    blob = _binary_file(dialect)
+
+    for length in range(_binary.HEADER_SIZE[dialect]):
+        # Shorter than the magic, it is not recognized as an SDF file at all.
+        message = "too short" if length >= MAGIC_SIZE else "unexpected magic"
+        with pytest.raises(SdfFormatError, match=message):
+            sdfio.SdfFile.loads(blob[:length])
+
+
+@pytest.mark.parametrize("dialect", list(SdfDialect))
+def test_a_binary_file_cut_anywhere_never_raises_anything_but_a_format_error(
+    dialect: SdfDialect,
+) -> None:
+    blob = _binary_file(dialect)
+    header_size = _binary.HEADER_SIZE[dialect]
+    data_end = header_size + 6 * 2  # the data area: 6 int16 values
+
+    for length in range(len(blob)):
+        try:
+            sdfio.SdfFile.loads(blob[:length])
+        except SdfFormatError:
+            assert length < data_end  # a shorter trailer is still a valid file
+        else:
+            assert length >= data_end

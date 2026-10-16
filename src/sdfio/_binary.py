@@ -62,6 +62,17 @@ def _pad(value: str, length: int) -> bytes:
     return value.encode("ascii")[:length].ljust(length, b" ")
 
 
+def _read_header_bytes(fp: IO[bytes], size: int) -> bytes:
+    """Read exactly ``size`` bytes of the header.
+
+    :raises SdfFormatError: If the file ends before.
+    """
+    data = fp.read(size)
+    if len(data) != size:
+        raise SdfFormatError("File is too short to contain an SDF header")
+    return data
+
+
 def load(fp: IO[bytes]) -> tuple[SdfHeader, np.ndarray, bytes]:
     """Parse a binary SDF file object opened in binary mode.
 
@@ -70,15 +81,13 @@ def load(fp: IO[bytes]) -> tuple[SdfHeader, np.ndarray, bytes]:
         ``(num_profiles, num_points)`` array of height values in metres,
         with ``NaN`` marking non-measured or spurious points.
     :raises SdfFormatError: If the file is malformed, e.g. a bad magic,
-        unsupported dialect or data type, or wrong data length. The trailer
+        unsupported dialect or data type, or it ends within the header or the data area. The trailer
         is not validated on read; it is returned as-is even if not 7-bit
         ASCII. ``ManufacID`` is truncated at the first NUL byte: BCR-1.0 lets
         a string shorter than its field be NUL-terminated, and some ISO
         writers do the same instead of space-padding it as ISO requires.
     """
-    magic = fp.read(MAGIC_SIZE)
-    if len(magic) != MAGIC_SIZE:
-        raise SdfFormatError("File is too short to contain an SDF header")
+    magic = _read_header_bytes(fp, MAGIC_SIZE)
     magic_text = magic.decode("ascii", errors="replace")
     if (
         len(magic_text) != MAGIC_SIZE
@@ -92,9 +101,11 @@ def load(fp: IO[bytes]) -> tuple[SdfHeader, np.ndarray, bytes]:
     if magic_text[0].lower() != BINARY_PREFIX:
         raise SdfFormatError("ASCII magic found while parsing a binary SDF file")
 
-    manufacturer_raw, create_raw, mod_raw = _STRINGS_STRUCT.unpack(fp.read(_STRINGS_STRUCT.size))
+    manufacturer_raw, create_raw, mod_raw = _STRINGS_STRUCT.unpack(
+        _read_header_bytes(fp, _STRINGS_STRUCT.size)
+    )
     counts_struct = _COUNTS_STRUCT[dialect]
-    num_points, num_profiles = counts_struct.unpack(fp.read(counts_struct.size))
+    num_points, num_profiles = counts_struct.unpack(_read_header_bytes(fp, counts_struct.size))
     (
         x_scale,
         y_scale,
@@ -103,7 +114,7 @@ def load(fp: IO[bytes]) -> tuple[SdfHeader, np.ndarray, bytes]:
         compression,
         data_type_code,
         check_type,
-    ) = _TAIL_STRUCT.unpack(fp.read(_TAIL_STRUCT.size))
+    ) = _TAIL_STRUCT.unpack(_read_header_bytes(fp, _TAIL_STRUCT.size))
     validate_compression(compression)
     validate_check_type(check_type)
 
