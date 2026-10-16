@@ -188,6 +188,11 @@ class Header:
     ``NumPoints`` and ``NumProfiles`` are not fields either: they are the shape of the data
     (:attr:`SdfFile.data`), which is written with them.
 
+    A header is checked when it is made and when a field is set: the revision, the file format,
+    the data type with the revision, a positive ``z_scale`` and a 7-bit ASCII ``manufacturer_id``.
+    A header that a reader returns is not, because the readers accept files with such values, so
+    that they can be inspected and fixed; the write rejects them.
+
     :param revision: Revision of the SDF format (see :class:`Revision`).
         Accepts a raw ``"ISO-2.0"``-shaped string as a convenience, which is
         coerced to :class:`Revision`.
@@ -240,11 +245,31 @@ class Header:
         if not isinstance(self.format, FileFormat):
             raise TypeError(f"format must be a FileFormat member, got {self.format!r}")
         require_supported_data_type(self.data_type, self.revision)
+        validate_z_scale(self.z_scale)
+        validate_manufacturer_id_ascii(self.manufacturer_id)
+
+    @classmethod
+    def _read(cls, **fields: object) -> Header:
+        """Return a header of what a file holds, which the readers accept as it is.
+
+        The readers tolerate what the standard forbids and a writer would reject, such as a
+        Z-scale that is not positive or a manufacturer ID that is not 7-bit ASCII, so that such a
+        file can be inspected and fixed. Nothing is checked here; :func:`validate_for_write` does
+        before a file is written, and every later assignment is checked as for any header.
+        """
+        header = cls.__new__(cls)
+        for name, value in fields.items():
+            object.__setattr__(header, name, value)
+        return header
 
     def __setattr__(self, name: str, value: object) -> None:
         """Hold the dates as UTC to the minute and the data type as a known one, whenever set."""
         if name == "data_type":
             value = get_data_type(value).type  # type: ignore[arg-type]
+        elif name == "z_scale":
+            validate_z_scale(value)  # type: ignore[arg-type]
+        elif name == "manufacturer_id":
+            validate_manufacturer_id_ascii(value)  # type: ignore[arg-type]
         if name in ("create_date", "mod_date"):
             value = to_sdf_datetime(value)  # type: ignore[arg-type]
         super().__setattr__(name, value)

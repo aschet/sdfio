@@ -183,7 +183,8 @@ def test_dump_rejects_non_ascii_trailer() -> None:
 
 
 def test_dump_rejects_non_ascii_manufacturer_id() -> None:
-    header = _make_header(manufacturer_id="Müller")
+    header = _make_header()
+    object.__setattr__(header, "manufacturer_id", "Müller")  # as a reader leaves it
     with pytest.raises(SdfFormatError, match="manufacturer_id must be 7-bit ASCII"):
         _binary.dump(header, np.zeros((1, 1)), io.BytesIO())
 

@@ -432,11 +432,37 @@ def test_write_rejects_non_positive_z_scale(z_scale: float) -> None:
 
 @pytest.mark.parametrize("z_scale", [0.0, -1e-6])
 def test_dumps_rejects_non_positive_z_scale(z_scale: float) -> None:
-    """The check must hold for direct Header/SdfFile construction too, not just write()."""
-    sdf = sdfio.SdfFile(header=sdfio.Header(z_scale=z_scale), data=np.zeros((1, 1)))
+    """A reader leaves such a Z-scale in the header; the write rejects it."""
+    header = sdfio.Header()
+    object.__setattr__(header, "z_scale", z_scale)
+    sdf = sdfio.SdfFile(header=header, data=np.zeros((1, 1)))
 
     with pytest.raises(SdfFormatError, match="z_scale must be a positive number"):
-        sdf.dumps()
+        sdf.save(io.BytesIO(), format=FileFormat.ASCII)
+
+
+@pytest.mark.parametrize("z_scale", [0.0, -1e-6])
+def test_a_header_rejects_a_non_positive_z_scale_when_it_is_made_or_set(z_scale: float) -> None:
+    with pytest.raises(SdfFormatError, match="z_scale must be a positive number"):
+        sdfio.Header(z_scale=z_scale)
+    header = sdfio.Header()
+    with pytest.raises(SdfFormatError, match="z_scale must be a positive number"):
+        header.z_scale = z_scale
+
+
+def test_a_header_rejects_a_manufacturer_id_that_is_not_ascii() -> None:
+    with pytest.raises(SdfFormatError, match="7-bit ASCII"):
+        sdfio.Header(manufacturer_id="Müller")
+
+
+def test_a_file_with_a_z_scale_of_zero_is_read_and_can_not_be_written() -> None:
+    sdf = sdfio.SdfFile(header=sdfio.Header(), data=np.zeros((1, 1)))
+    blob = bytearray(sdf.dumps())
+    blob[66:74] = bytes(8)  # Zscale of the binary header of ISO-2.0
+    read = sdfio.SdfFile.loads(bytes(blob))
+    assert read.header.z_scale == 0.0
+    with pytest.raises(SdfFormatError, match="z_scale must be a positive number"):
+        read.dumps()
 
 
 @pytest.mark.parametrize("file_format", [FileFormat.BINARY, FileFormat.ASCII])

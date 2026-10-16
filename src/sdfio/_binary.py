@@ -123,7 +123,7 @@ def load(fp: IO[bytes]) -> tuple[Header, np.ndarray, bytes]:
     # undefined), while ISO requires space-padding. Some ISO writers follow the
     # BCR rule; truncating handles both and keeps the undefined bytes out of
     # the decoded value.
-    header = Header(
+    header = Header._read(
         revision=revision,
         format=FileFormat.BINARY,
         manufacturer_id=manufacturer_raw.split(b"\x00", 1)[0]

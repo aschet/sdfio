@@ -184,7 +184,7 @@ def loads(text: str) -> tuple[Header, np.ndarray, str]:
     validate_compression(_parse_coded(fields, "Compression", revision, _BCR_COMPRESSION_NAMES))
     validate_check_type(_parse_coded(fields, "CheckType", revision, _BCR_CHECK_TYPE_NAMES))
 
-    header = Header(
+    header = Header._read(
         revision=revision,
         format=FileFormat.ASCII,
         manufacturer_id=_field(fields, "ManufacID").strip(),
