@@ -9,10 +9,8 @@ from __future__ import annotations
 import io
 
 import numpy as np
-import pytest
 
 import sdfio
-from sdfio.exceptions import SdfFormatError
 from sdfio.file import FileFormat
 from sdfio.header import Revision
 
@@ -61,7 +59,7 @@ def test_points_follow_the_right_handed_system_of_every_revision() -> None:
 
 def test_points_of_a_profile_have_one_row_with_y_zero() -> None:
     sdf = sdfio.SdfFile(
-        header=sdfio.Header(num_points=4, num_profiles=1, x_scale=1e-6, y_scale=5.0),
+        header=sdfio.Header(x_scale=1e-6, y_scale=5.0),
         data=np.arange(4.0).reshape(1, 4),
     )
 
@@ -73,7 +71,7 @@ def test_points_of_a_profile_have_one_row_with_y_zero() -> None:
 
 def test_points_are_a_copy_and_can_be_reshaped_for_point_cloud_libraries() -> None:
     sdf = sdfio.SdfFile(
-        header=sdfio.Header(num_points=3, num_profiles=2, x_scale=1.0, y_scale=1.0),
+        header=sdfio.Header(x_scale=1.0, y_scale=1.0),
         data=_sample_data(),
     )
 
@@ -86,16 +84,9 @@ def test_points_are_a_copy_and_can_be_reshaped_for_point_cloud_libraries() -> No
     assert measured.shape == (5, 3)
 
 
-def test_points_refuse_data_that_does_not_fit_the_header() -> None:
-    sdf = sdfio.SdfFile(header=sdfio.Header(num_points=3, num_profiles=2), data=np.zeros((3, 2)))
-
-    with pytest.raises(SdfFormatError, match="shape"):
-        sdf.points()
-
-
 def test_points_can_leave_out_the_points_that_are_not_measured() -> None:
     sdf = sdfio.SdfFile(
-        header=sdfio.Header(num_points=3, num_profiles=2, x_scale=1.0, y_scale=10.0),
+        header=sdfio.Header(x_scale=1.0, y_scale=10.0),
         data=_sample_data(),
     )
 
@@ -109,17 +100,10 @@ def test_points_can_leave_out_the_points_that_are_not_measured() -> None:
 
 def test_points_of_a_profile_without_missing_points_keep_all_of_them() -> None:
     sdf = sdfio.SdfFile(
-        header=sdfio.Header(num_points=3, num_profiles=1, x_scale=2.0, y_scale=7.0),
+        header=sdfio.Header(x_scale=2.0, y_scale=7.0),
         data=np.array([[1.0, 2.0, 3.0]]),
     )
 
     measured = sdf.points(drop_invalid=True)
 
     assert measured.tolist() == [[0.0, 0.0, 1.0], [2.0, 0.0, 2.0], [4.0, 0.0, 3.0]]
-
-
-def test_points_with_the_option_also_refuse_data_that_does_not_fit_the_header() -> None:
-    sdf = sdfio.SdfFile(header=sdfio.Header(num_points=3, num_profiles=2), data=np.zeros((3, 2)))
-
-    with pytest.raises(SdfFormatError, match="shape"):
-        sdf.points(drop_invalid=True)

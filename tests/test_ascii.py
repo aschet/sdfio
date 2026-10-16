@@ -43,12 +43,11 @@ ISO_ANNEX_A_EXAMPLE = (
 
 
 def test_loads_parses_header() -> None:
-    header, _data, _trailer = _ascii.loads(ISO_ANNEX_A_EXAMPLE)
+    header, data, _trailer = _ascii.loads(ISO_ANNEX_A_EXAMPLE)
+    assert data.shape == (2, 3)
     assert header.revision == Revision.ISO_2_0
     assert header.format is FileFormat.ASCII
     assert header.manufacturer_id == "ISOTC213"
-    assert header.num_points == 3
-    assert header.num_profiles == 2
     assert header.data_type == 3
     assert header.z_scale == pytest.approx(1e-6)
 
@@ -169,37 +168,37 @@ def test_load_reads_from_file_object() -> None:
 
 
 def test_dumps_rejects_out_of_range_integer_value() -> None:
-    header = Header(num_points=1, num_profiles=1, z_scale=1.0, data_type=4)  # int8
+    header = Header(z_scale=1.0, data_type=4)  # int8
     with pytest.raises(SdfFormatError, match="out of range"):
         _ascii.dumps(header, np.array([[1000.0]]))
 
 
 def test_dumps_rejects_sentinel_collision() -> None:
-    header = Header(num_points=1, num_profiles=1, z_scale=1.0, data_type=4)  # int8
+    header = Header(z_scale=1.0, data_type=4)  # int8
     with pytest.raises(SdfFormatError, match="invalid-point sentinel"):
         _ascii.dumps(header, np.array([[-128.0]]))
 
 
 def test_dumps_rejects_malformed_v2_trailer() -> None:
-    header = Header(revision=Revision.ISO_2_0, num_points=1, num_profiles=1, data_type=7)
+    header = Header(revision=Revision.ISO_2_0, data_type=7)
     with pytest.raises(SdfFormatError, match="tagged 'Name = Value' format"):
         _ascii.dumps(header, np.zeros((1, 1)), trailer="not tagged fields")
 
 
 def test_dumps_allows_tagged_v2_trailer() -> None:
-    header = Header(revision=Revision.ISO_2_0, num_points=1, num_profiles=1, data_type=7)
+    header = Header(revision=Revision.ISO_2_0, data_type=7)
     _ascii.dumps(header, np.zeros((1, 1)), trailer="Note = hello")
 
 
 def test_dumps_allows_empty_v2_trailer() -> None:
-    header = Header(revision=Revision.ISO_2_0, num_points=1, num_profiles=1, data_type=7)
+    header = Header(revision=Revision.ISO_2_0, data_type=7)
     _ascii.dumps(header, np.zeros((1, 1)), trailer="")
 
 
 def test_dumps_loads_roundtrips_empty_trailer_as_empty_string() -> None:
     # dumps() always terminates the trailer record, even when empty -- this
     # produces two adjacent "*" markers with nothing between them.
-    header = Header(revision=Revision.ISO_2_0, num_points=1, num_profiles=1, data_type=7)
+    header = Header(revision=Revision.ISO_2_0, data_type=7)
     text = _ascii.dumps(header, np.zeros((1, 1)), trailer="")
     assert text.endswith("*\r\n*\r\n")
     _header, _data, trailer = _ascii.loads(text)
@@ -208,31 +207,31 @@ def test_dumps_loads_roundtrips_empty_trailer_as_empty_string() -> None:
 
 def test_dumps_does_not_insert_blank_line_for_crlf_terminated_trailer() -> None:
     """A trailer that already ends in its own line terminator must not get a doubled one."""
-    header = Header(revision=Revision.ISO_2_0, num_points=1, num_profiles=1, data_type=7)
+    header = Header(revision=Revision.ISO_2_0, data_type=7)
     text = _ascii.dumps(header, np.zeros((1, 1)), trailer="OperatorName = Jane Doe\r\n")
     assert text.endswith("OperatorName = Jane Doe\r\n*\r\n")
 
 
 def test_dumps_v1_trailer_need_not_be_xml() -> None:
-    header = Header(revision=Revision.ISO_1_0, num_points=1, num_profiles=1, data_type=7)
+    header = Header(revision=Revision.ISO_1_0, data_type=7)
     _ascii.dumps(header, np.zeros((1, 1)), trailer="Operator = Jane Doe")
 
 
 def test_dumps_rejects_non_ascii_trailer() -> None:
-    header = Header(num_points=1, num_profiles=1, data_type=7)
+    header = Header(data_type=7)
     with pytest.raises(SdfFormatError, match="must be 7-bit ASCII"):
         _ascii.dumps(header, np.zeros((1, 1)), trailer="Müller café")
 
 
 def test_dumps_rejects_non_ascii_manufacturer_id() -> None:
-    header = Header(num_points=1, num_profiles=1, data_type=7, manufacturer_id="Müller")
+    header = Header(data_type=7, manufacturer_id="Müller")
     with pytest.raises(SdfFormatError, match="manufacturer_id must be 7-bit ASCII"):
         _ascii.dumps(header, np.zeros((1, 1)))
 
 
 def test_loads_returns_non_ascii_trailer_as_is() -> None:
     """A non-compliant trailer must not prevent reading the (already-parsed) depth data."""
-    header = Header(num_points=1, num_profiles=1, data_type=7)
+    header = Header(data_type=7)
     # dumps() itself always terminates the (here, empty) trailer; replace
     # that terminator to simulate a non-compliant trailer added after the fact.
     text = _ascii.dumps(header, np.zeros((1, 1)))
@@ -249,47 +248,36 @@ def test_dumps_roundtrips_loads() -> None:
     data = np.array([[1e-6, np.nan, -2.5e-6], [0.0, 3.14159e-6, 1.0e-6]])
     header = Header(
         revision=Revision.ISO_2_0,
-        num_points=3,
-        num_profiles=2,
         x_scale=1e-6,
         y_scale=1e-6,
         z_scale=1e-6,
         data_type=7,
     )
     text = _ascii.dumps(header, data)
-    round_tripped_header, round_tripped_data, _trailer = _ascii.loads(text)
+    _header, round_tripped_data, _trailer = _ascii.loads(text)
 
-    assert round_tripped_header.num_points == header.num_points
-    assert round_tripped_header.num_profiles == header.num_profiles
+    assert round_tripped_data.shape == data.shape
     np.testing.assert_allclose(round_tripped_data, data, rtol=1e-10, equal_nan=True)
 
 
 def test_dumps_roundtrips_integer_data_type() -> None:
     data = np.array([[1e-6, np.nan], [-2e-6, 0.0]])
-    header = Header(num_points=2, num_profiles=2, z_scale=1e-6, data_type=6)
+    header = Header(z_scale=1e-6, data_type=6)
     text = _ascii.dumps(header, data)
     _header, round_tripped_data, _trailer = _ascii.loads(text)
     np.testing.assert_allclose(round_tripped_data, data, rtol=1e-9, equal_nan=True)
 
 
 def test_dump_writes_to_file_object() -> None:
-    header = Header(num_points=1, num_profiles=1, data_type=7)
+    header = Header(data_type=7)
     fp = io.StringIO()
     _ascii.dump(header, np.zeros((1, 1)), fp)
     assert fp.getvalue().startswith("aISO-2.0")
 
 
-def test_dumps_rejects_shape_mismatch() -> None:
-    header = Header(num_points=2, num_profiles=2)
-    with pytest.raises(SdfFormatError, match="does not match header shape"):
-        _ascii.dumps(header, np.zeros((3, 3)))
-
-
 def test_dumps_loads_roundtrip_bcr_revision() -> None:
     header = Header(
         revision=Revision.BCR_1_0,
-        num_points=2,
-        num_profiles=1,
         z_scale=1e-6,
         data_type=3,
     )
@@ -306,12 +294,8 @@ def test_dumps_reverses_profile_order_for_bcr_on_disk() -> None:
     # Each row has a distinct value so the on-disk row order is directly
     # observable, independent of the revision-aware unflipping loads() does.
     data = np.array([[0.0], [1.0], [2.0], [3.0]])
-    iso_header = Header(
-        revision=Revision.ISO_1_0, num_points=1, num_profiles=4, z_scale=1.0, data_type=7
-    )
-    bcr_header = Header(
-        revision=Revision.BCR_1_0, num_points=1, num_profiles=4, z_scale=1.0, data_type=7
-    )
+    iso_header = Header(revision=Revision.ISO_1_0, z_scale=1.0, data_type=7)
+    bcr_header = Header(revision=Revision.BCR_1_0, z_scale=1.0, data_type=7)
 
     iso_text = _ascii.dumps(iso_header, data)
     bcr_text = _ascii.dumps(bcr_header, data)
@@ -330,7 +314,7 @@ def test_dumps_reverses_profile_order_for_bcr_on_disk() -> None:
 
 
 def test_dumps_loads_roundtrip_none_dates() -> None:
-    header = Header(num_points=1, num_profiles=1, data_type=7, create_date=None, mod_date=None)
+    header = Header(data_type=7, create_date=None, mod_date=None)
     text = _ascii.dumps(header, np.zeros((1, 1)))
     assert "CreateDate = 000000000000" in text
 
@@ -485,9 +469,8 @@ def test_loads_iso_rejects_bcr_only_ascii_extensions() -> None:
 def test_loads_accepts_cr_lf_and_crlf_terminators(example: str, terminator: str) -> None:
     # The standard mandates CRLF and BCR-1.0 allows any of the three; reading accepts all three.
     text = example.replace("\r\n", terminator)
-    header, data, _trailer = _ascii.loads(text)
+    _header, data, _trailer = _ascii.loads(text)
     assert data.shape == (2, 3)
-    assert header.num_points == 3
 
 
 @pytest.mark.parametrize("example", [BCR_SPECIFICATION_EXAMPLE, ISO_ANNEX_A_EXAMPLE])
@@ -529,8 +512,6 @@ def test_loads_iso_does_not_treat_numbers_as_bad_data() -> None:
 def test_dumps_bcr_writes_bad_data_as_number_not_token(data_type: DataType) -> None:
     header = Header(
         revision=Revision.BCR_1_0,
-        num_points=2,
-        num_profiles=1,
         z_scale=1.0,
         data_type=data_type,
     )
@@ -556,10 +537,9 @@ def test_an_ascii_z_scale_without_a_sensible_product_is_read_without_a_warning(
 
     with warnings.catch_warnings():
         warnings.simplefilter("error")
-        header, data, _ = _ascii.loads(text)
+        _header, data, _ = _ascii.loads(text)
 
     assert data.shape == (1, 2)
-    assert header.num_points == 2
 
 
 def _ascii_with_tokens(revision: Revision, data_type: DataType, tokens: list[str]) -> str:

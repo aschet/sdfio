@@ -461,6 +461,8 @@ class Header:
     neither compression nor a checksummed data area is supported, for
     any revision, on read or write (rejected outright, always written as
     ``0``) -- see :func:`validate_compression`/:func:`validate_check_type`.
+    ``NumPoints`` and ``NumProfiles`` are not fields either: they are the shape of the data
+    (:attr:`SdfFile.data`), which is written with them.
 
     :param revision: Revision of the SDF format (see :class:`Revision`).
         Accepts a raw ``"ISO-2.0"``-shaped string as a convenience, which is
@@ -478,10 +480,6 @@ class Header:
         it as local time (see :func:`format_sdf_datetime`).
     :param mod_date: Last modification date and time, or ``None`` if not
         recorded in the file; held like ``create_date``.
-    :param num_points: Number of columns *M* in the data matrix (x-direction).
-    :param num_profiles: Number of rows *N* in the data matrix (y-direction).
-        The standard uses ``1`` here for a profile (as opposed to an areal
-        surface) and calls ``y_scale`` meaningless in that case.
     :param x_scale: Sampling interval in metres along x.
     :param y_scale: Sampling interval in metres along y.
     :param z_scale: Scale factor applied to the coded height values.
@@ -501,8 +499,6 @@ class Header:
     manufacturer_id: str = "sdfio"
     create_date: datetime | None = field(default_factory=lambda: datetime.now(UTC))
     mod_date: datetime | None = field(default_factory=lambda: datetime.now(UTC))
-    num_points: int = 0
-    num_profiles: int = 0
     x_scale: float = 1.0
     y_scale: float = 1.0
     z_scale: float = 1.0
@@ -527,21 +523,6 @@ class Header:
         super().__setattr__(name, value)
 
     @property
-    def shape(self) -> tuple[int, int]:
-        """Shape ``(num_profiles, num_points)`` of the data matrix."""
-        return (self.num_profiles, self.num_points)
-
-    @property
-    def is_profile(self) -> bool:
-        """Whether the file holds a profile and not an areal surface: ``num_profiles`` is 1.
-
-        The standard defines a profile this way ("in case of a profile, the value of 'Number of
-        rows in the data matrix' is 1") and calls ``y_scale`` meaningless for it. A surface with
-        a single row is therefore a profile.
-        """
-        return self.num_profiles == 1
-
-    @property
     def magic(self) -> str:
         """8-character file magic (family and version) written at the start of the file."""
         prefix = BINARY_PREFIX if self.format is FileFormat.BINARY else ASCII_PREFIX
@@ -555,8 +536,7 @@ class Metadata:
     Holds exactly the :class:`Header` fields that are meaningful to reuse
     across many :func:`sdfio.write` calls -- as opposed to ``x_scale``/
     ``y_scale``/``z_scale``/``format``, which differ on every call and are
-    write()'s own parameters, and ``num_points``/``num_profiles``/``format``,
-    which write() always derives itself.
+    write()'s own parameters.
     Every field here is used as given, with no overriding.
 
     :param revision: Revision of the SDF format (see :class:`Revision`).

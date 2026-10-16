@@ -104,7 +104,6 @@ def test_a_sample_reads_as_it_was_meant(case: tuple[Revision, str, str]) -> None
     assert sdf.data.shape == expected.data.shape
     assert (sdf.header.x_scale, sdf.header.y_scale) == (generate.X_SCALE, generate.Y_SCALE)
     assert sdf.header.z_scale == generate.Z_SCALES[expected.data_type]
-    assert (sdf.header.num_profiles, sdf.header.num_points) == expected.data.shape
     # The points that are not measured are those of the data, at the same rows and columns.
     assert np.array_equal(np.isnan(sdf.data), np.isnan(expected.data))
     # The heights are the data to the precision of the type: the quantization step of an

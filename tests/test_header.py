@@ -103,19 +103,6 @@ def test_reverses_profile_order_is_bcr_only() -> None:
     assert Revision.ISO_2_0.reverses_profile_order is False
 
 
-def test_header_shape() -> None:
-    header = Header(num_points=5, num_profiles=3)
-    assert header.shape == (3, 5)
-
-
-@pytest.mark.parametrize(
-    ("num_profiles", "expected"), [(0, False), (1, True), (2, False), (480, False)]
-)
-def test_header_is_profile_when_it_has_one_row(num_profiles: int, expected: bool) -> None:
-    # The standard defines a profile by NumProfiles being 1.
-    assert Header(num_points=5, num_profiles=num_profiles).is_profile is expected
-
-
 def test_header_defaults_are_valid_iso_revision() -> None:
     header = Header()
     assert header.revision == Revision.ISO_2_0
@@ -175,8 +162,6 @@ def test_the_instant_survives_a_file_in_every_revision(revision: Revision, binar
     header = Header(
         revision=revision,
         format=FileFormat.BINARY if binary else FileFormat.ASCII,
-        num_points=1,
-        num_profiles=1,
         create_date=plus_two,
         mod_date=plus_two,
         data_type=sdfio.DataType.INT16,
@@ -195,8 +180,6 @@ def test_the_older_revisions_store_local_time_in_the_file(revision: Revision) ->
     header = Header(
         revision=revision,
         format=FileFormat.ASCII,
-        num_points=1,
-        num_profiles=1,
         create_date=instant,
         mod_date=instant,
         data_type=sdfio.DataType.INT16,
@@ -232,8 +215,6 @@ def test_dates_have_the_resolution_of_the_field_so_a_file_returns_what_was_set()
 def test_the_date_read_from_a_file_equals_the_one_that_was_set(revision: Revision) -> None:
     header = Header(
         revision=revision,
-        num_points=1,
-        num_profiles=1,
         create_date=datetime.now(UTC),
         data_type=sdfio.DataType.INT16,
     )
@@ -272,8 +253,6 @@ def test_a_file_with_a_bad_date_field_is_still_read(revision: Revision, binary: 
     header = Header(
         revision=revision,
         format=FileFormat.BINARY if binary else FileFormat.ASCII,
-        num_points=2,
-        num_profiles=1,
         z_scale=1e-9,
         data_type=sdfio.DataType.INT16,
     )

@@ -62,7 +62,7 @@ def test_cli_info_prints_not_recorded_for_none_dates(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     path = tmp_path / "surface.sdf"
-    header = sdfio.Header(num_points=1, num_profiles=1, create_date=None, mod_date=None)
+    header = sdfio.Header(create_date=None, mod_date=None)
     sdfio.SdfFile(header=header, data=np.zeros((1, 1))).save(path)
 
     assert main(["info", str(path)]) == 0
@@ -254,7 +254,7 @@ def test_cli_convert_fix_trailer_replaces_non_ascii_char_for_non_tagged_revision
     source = tmp_path / "surface.sdf"
     destination = tmp_path / "converted.sdf"
     sdf = sdfio.SdfFile(
-        header=sdfio.Header(revision=sdfio.Revision.ISO_1_0, num_points=1, num_profiles=1),
+        header=sdfio.Header(revision=sdfio.Revision.ISO_1_0),
         data=np.zeros((1, 1)),
         trailer=b"Note = X\nAnother line",
     )

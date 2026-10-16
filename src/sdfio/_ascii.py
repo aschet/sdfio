@@ -196,8 +196,6 @@ def loads(text: str) -> tuple[Header, np.ndarray, str]:
         manufacturer_id=_field(fields, "ManufacID").strip(),
         create_date=parse_sdf_datetime(_field(fields, "CreateDate"), revision),
         mod_date=parse_sdf_datetime(_field(fields, "ModDate"), revision),
-        num_points=_parse_int(fields, "NumPoints"),
-        num_profiles=_parse_int(fields, "NumProfiles"),
         x_scale=_parse_float(fields, "Xscale"),
         y_scale=_parse_float(fields, "Yscale"),
         z_scale=_parse_float(fields, "Zscale"),
@@ -205,7 +203,8 @@ def loads(text: str) -> tuple[Header, np.ndarray, str]:
         data_type=data_type_code,
     )
 
-    data = _parse_data(data_text, header, data_type)
+    shape = (_parse_int(fields, "NumProfiles"), _parse_int(fields, "NumPoints"))
+    data = _parse_data(data_text, header, shape, data_type)
     # Not validated on read, unlike on write: the trailer is secondary to
     # the header/data area, and a non-compliant trailer in an otherwise
     # valid file shouldn't prevent reading the (already successfully
@@ -214,14 +213,16 @@ def loads(text: str) -> tuple[Header, np.ndarray, str]:
     return header, data, trailer
 
 
-def _parse_data(data_text: str, header: Header, data_type: DataTypeInfo) -> np.ndarray:
+def _parse_data(
+    data_text: str, header: Header, shape: tuple[int, int], data_type: DataTypeInfo
+) -> np.ndarray:
     tokens = data_text.split()
-    expected = header.num_points * header.num_profiles
+    expected = shape[0] * shape[1]
     if len(tokens) != expected:
         raise SdfFormatError(f"Expected {expected} data values, found {len(tokens)}")
 
     is_float = data_type.type in (DataType.BINARY32, DataType.BINARY64)
-    values = np.empty(header.num_points * header.num_profiles, dtype=np.float64)
+    values = np.empty(expected, dtype=np.float64)
     for index, token in enumerate(tokens):
         # The standard only specifies the literal "BAD"; matching it case-insensitively, and
         # reading "NaN" as the same marker, are deliberate leniencies, not mandated. "NaN" is
@@ -244,7 +245,7 @@ def _parse_data(data_text: str, header: Header, data_type: DataTypeInfo) -> np.n
     # NaN before scaling: a huge marker value could overflow when scaled.
     values[invalid_mask] = np.nan
     with np.errstate(invalid="ignore", over="ignore"):  # see decode_raw
-        data = (values * header.z_scale).reshape(header.num_profiles, header.num_points)
+        data = (values * header.z_scale).reshape(shape)
     return data[::-1] if header.revision.reverses_profile_order else data
 
 
@@ -282,8 +283,6 @@ def dumps(header: Header, data: np.ndarray, trailer: str = "") -> str:
     :func:`sdfio._numeric.format_scientific`). Use the binary format to
     avoid this.
     """
-    if data.shape != header.shape:
-        raise SdfFormatError(f"Data shape {data.shape} does not match header shape {header.shape}")
     validate_z_scale(header.z_scale)
     validate_manufacturer_id_ascii(header.manufacturer_id)
     validate_trailer_ascii(trailer)
@@ -295,8 +294,8 @@ def dumps(header: Header, data: np.ndarray, trailer: str = "") -> str:
         ("ManufacID", header.manufacturer_id),
         ("CreateDate", format_sdf_datetime(header.create_date, header.revision)),
         ("ModDate", format_sdf_datetime(header.mod_date, header.revision)),
-        ("NumPoints", str(header.num_points)),
-        ("NumProfiles", str(header.num_profiles)),
+        ("NumPoints", str(data.shape[1])),
+        ("NumProfiles", str(data.shape[0])),
         ("Xscale", _format_scale_field(header.x_scale)),
         ("Yscale", _format_scale_field(header.y_scale)),
         ("Zscale", _format_scale_field(header.z_scale)),

@@ -138,8 +138,6 @@ def load(fp: IO[bytes]) -> tuple[Header, np.ndarray, bytes]:
         .rstrip(),
         create_date=parse_sdf_datetime(create_raw.decode("ascii", errors="replace"), revision),
         mod_date=parse_sdf_datetime(mod_raw.decode("ascii", errors="replace"), revision),
-        num_points=num_points,
-        num_profiles=num_profiles,
         x_scale=x_scale,
         y_scale=y_scale,
         z_scale=z_scale,
@@ -150,15 +148,13 @@ def load(fp: IO[bytes]) -> tuple[Header, np.ndarray, bytes]:
     # The data area and the trailer are read together and split, instead of asking for the size
     # that the header claims: a damaged header can name a size that no file holds, which is not
     # something to pass to read().
-    count = header.num_points * header.num_profiles
+    count = num_points * num_profiles
     byte_count = count * data_type.dtype.itemsize
     rest = fp.read()
     if len(rest) < byte_count:
         raise SdfFormatError("Unexpected end of file while reading the SDF data area")
     raw = np.frombuffer(rest, dtype=data_type.dtype, count=count)
-    data = decode_raw(raw, data_type, header.z_scale, revision).reshape(
-        header.num_profiles, header.num_points
-    )
+    data = decode_raw(raw, data_type, header.z_scale, revision).reshape(num_profiles, num_points)
     if revision.reverses_profile_order:
         data = data[::-1]
 
@@ -178,8 +174,6 @@ def dump(header: Header, data: np.ndarray, fp: IO[bytes], trailer: bytes = b"") 
         metres. ``NaN`` marks non-measured or spurious points.
     :param trailer: Optional raw record 3 trailer content.
     """
-    if data.shape != header.shape:
-        raise SdfFormatError(f"Data shape {data.shape} does not match header shape {header.shape}")
     if header.revision not in _COUNTS_STRUCT:
         raise SdfFormatError(f"Unsupported SDF revision {header.revision!r}")
     validate_z_scale(header.z_scale)
@@ -194,12 +188,13 @@ def dump(header: Header, data: np.ndarray, fp: IO[bytes], trailer: bytes = b"") 
     fp.write(_pad(format_sdf_datetime(header.mod_date, header.revision), _DATE_SIZE))
     counts_struct = _COUNTS_STRUCT[header.revision]
     max_count = header.revision.max_binary_count
-    if not (0 <= header.num_points <= max_count and 0 <= header.num_profiles <= max_count):
+    num_profiles, num_points = data.shape
+    if max(data.shape) > max_count:
         raise SdfFormatError(
             f"NumPoints/NumProfiles must be between 0 and {max_count} for SDF "
             f"revision {header.revision} (binary format)"
         )
-    fp.write(counts_struct.pack(header.num_points, header.num_profiles))
+    fp.write(counts_struct.pack(num_points, num_profiles))
     fp.write(
         _TAIL_STRUCT.pack(
             header.x_scale,

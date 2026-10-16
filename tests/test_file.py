@@ -57,8 +57,7 @@ def test_write_read_roundtrip(file_format: FileFormat, revision: Revision) -> No
 
     assert sdf.header.revision == revision
     assert sdf.header.format is file_format
-    assert sdf.header.num_points == 3
-    assert sdf.header.num_profiles == 2
+    assert sdf.data.shape == (2, 3)
     np.testing.assert_allclose(sdf.data, data, rtol=1e-9, equal_nan=True)
     np.testing.assert_allclose(sdf.x_axis, np.arange(3) * 1e-6)
     np.testing.assert_allclose(sdf.y_axis, np.arange(2) * 2e-6)
@@ -92,7 +91,7 @@ def test_trailer_roundtrip(file_format: FileFormat, revision: Revision) -> None:
     # Neither revision imposes a format requirement on the trailer's content,
     # so arbitrary ASCII text round-trips as-is.
     sdf = sdfio.SdfFile(
-        header=sdfio.Header(revision=revision, format=file_format, num_points=1, num_profiles=1),
+        header=sdfio.Header(revision=revision, format=file_format),
         data=np.zeros((1, 1)),
         trailer="OperatorName = Jane Doe",
     )
@@ -111,9 +110,7 @@ def test_trailer_roundtrip(file_format: FileFormat, revision: Revision) -> None:
 def test_dumps_rejects_non_ascii_trailer(binary: bool) -> None:
     """Record 3 (the trailer) is defined as a sequence of ASCII values, for both formats."""
     sdf = sdfio.SdfFile(
-        header=sdfio.Header(
-            format=FileFormat.BINARY if binary else FileFormat.ASCII, num_points=1, num_profiles=1
-        ),
+        header=sdfio.Header(format=FileFormat.BINARY if binary else FileFormat.ASCII),
         data=np.zeros((1, 1)),
         trailer="Operator = Müller café",
     )
@@ -126,9 +123,7 @@ def test_dumps_rejects_non_ascii_trailer(binary: bool) -> None:
 def test_loads_reads_data_despite_corrupt_trailer(binary: bool) -> None:
     """A corrupt trailer must not prevent reading the (already-decoded) depth data."""
     sdf = sdfio.SdfFile(
-        header=sdfio.Header(
-            format=FileFormat.BINARY if binary else FileFormat.ASCII, num_points=2, num_profiles=2
-        ),
+        header=sdfio.Header(format=FileFormat.BINARY if binary else FileFormat.ASCII),
         data=np.zeros((2, 2)),
         trailer=b"Operator = X" if binary else "Operator = X",
     )
@@ -151,7 +146,7 @@ def test_is_profile_follows_the_number_of_rows_of_a_file_that_is_read() -> None:
 
 
 def test_trailer_fields_roundtrip() -> None:
-    sdf = sdfio.SdfFile(header=sdfio.Header(num_points=1, num_profiles=1), data=np.zeros((1, 1)))
+    sdf = sdfio.SdfFile(header=sdfio.Header(), data=np.zeros((1, 1)))
 
     sdf.trailer_fields = {"OperatorName": "Jane Doe", "PartName": "Example"}
 
@@ -162,7 +157,7 @@ def test_trailer_fields_roundtrip() -> None:
 
 def test_trailer_fields_getter_returns_read_only_view() -> None:
     """Mutating the returned mapping in place must not silently vanish; it must fail loudly."""
-    sdf = sdfio.SdfFile(header=sdfio.Header(num_points=1, num_profiles=1), data=np.zeros((1, 1)))
+    sdf = sdfio.SdfFile(header=sdfio.Header(), data=np.zeros((1, 1)))
     sdf.trailer_fields = {"OperatorName": "Jane Doe"}
 
     with pytest.raises(TypeError):
@@ -174,7 +169,7 @@ def test_trailer_fields_getter_returns_read_only_view() -> None:
 def test_trailer_fields_getter_drops_malformed_lines_instead_of_raising() -> None:
     """Inspecting the trailer must not fail just because it's malformed."""
     sdf = sdfio.SdfFile(
-        header=sdfio.Header(num_points=1, num_profiles=1),
+        header=sdfio.Header(),
         data=np.zeros((1, 1)),
         trailer="OperatorName = Jane Doe\r\nnot tagged fields\r\nPartName = X",
     )
@@ -185,9 +180,7 @@ def test_trailer_fields_getter_drops_malformed_lines_instead_of_raising() -> Non
 def test_trailer_fields_getter_stays_lenient_on_non_ascii_bytes() -> None:
     """Inspecting an already non-ASCII trailer (e.g. from a non-compliant file) must not raise."""
     trailer = "Operator = Müller café".encode()
-    sdf = sdfio.SdfFile(
-        header=sdfio.Header(num_points=1, num_profiles=1), data=np.zeros((1, 1)), trailer=trailer
-    )
+    sdf = sdfio.SdfFile(header=sdfio.Header(), data=np.zeros((1, 1)), trailer=trailer)
 
     assert sdf.trailer_fields == {"Operator": "Müller café"}
 
@@ -222,8 +215,6 @@ def test_write_read_roundtrip_all_data_types(file_format: FileFormat, data_type:
     sdf = sdfio.SdfFile(
         header=sdfio.Header(
             format=file_format,
-            num_points=3,
-            num_profiles=2,
             x_scale=1e-6,
             y_scale=1e-6,
             z_scale=1.0,
@@ -249,8 +240,6 @@ def test_write_read_roundtrip_bcr_unsigned_data_types(
         header=sdfio.Header(
             revision=Revision.BCR_1_0,
             format=file_format,
-            num_points=3,
-            num_profiles=2,
             x_scale=1e-6,
             y_scale=1e-6,
             z_scale=1.0,
@@ -269,8 +258,6 @@ def test_raw_data_exposes_native_dtype() -> None:
     data = np.array([[1.0e-6, np.nan], [-2.0e-6, 0.0]])
     sdf = sdfio.SdfFile(
         header=sdfio.Header(
-            num_points=2,
-            num_profiles=2,
             x_scale=1e-6,
             y_scale=1e-6,
             z_scale=1e-6,
@@ -287,8 +274,6 @@ def test_modifying_data_and_saving_retains_original_data_type() -> None:
     data = np.array([[1.0e-6, 2.0e-6], [3.0e-6, 4.0e-6]])
     sdf = sdfio.SdfFile(
         header=sdfio.Header(
-            num_points=2,
-            num_profiles=2,
             x_scale=1e-6,
             y_scale=1e-6,
             z_scale=1e-6,
@@ -308,8 +293,6 @@ def test_changing_data_type_after_read_reencodes_on_save() -> None:
     data = np.array([[1.0e-6, 2.0e-6], [3.0e-6, 4.0e-6]])
     sdf = sdfio.SdfFile(
         header=sdfio.Header(
-            num_points=2,
-            num_profiles=2,
             x_scale=1e-6,
             y_scale=1e-6,
             z_scale=1e-6,
@@ -326,7 +309,7 @@ def test_changing_data_type_after_read_reencodes_on_save() -> None:
 
 
 def test_data_type_roundtrips_and_rejects_unknown_code() -> None:
-    sdf = sdfio.SdfFile(header=sdfio.Header(num_points=1, num_profiles=1), data=np.zeros((1, 1)))
+    sdf = sdfio.SdfFile(header=sdfio.Header(), data=np.zeros((1, 1)))
     assert sdf.data_type == DataType.BINARY64
 
     sdf.data_type = DataType.BINARY32
@@ -339,7 +322,7 @@ def test_data_type_roundtrips_and_rejects_unknown_code() -> None:
 
 def test_changing_data_type_incompatible_with_revision_raises() -> None:
     sdf = sdfio.SdfFile(
-        header=sdfio.Header(revision=Revision.ISO_1_0, num_points=1, num_profiles=1, data_type=5),
+        header=sdfio.Header(revision=Revision.ISO_1_0, data_type=5),
         data=np.array([[1.0]]),
     )
     sdf.data_type = DataType.BINARY32  # ISO-2.0/BCR-1.0 only
@@ -355,8 +338,6 @@ def test_with_revision_upgrades_iso_1_0_to_2_0() -> None:
     sdf = sdfio.SdfFile(
         header=sdfio.Header(
             revision=Revision.ISO_1_0,
-            num_points=1,
-            num_profiles=1,
             create_date=naive_date,
             mod_date=naive_date,
         ),
@@ -383,8 +364,6 @@ def test_with_revision_downgrades_iso_2_0_to_1_0() -> None:
     sdf = sdfio.SdfFile(
         header=sdfio.Header(
             revision=Revision.ISO_2_0,
-            num_points=1,
-            num_profiles=1,
             create_date=utc_date,
             mod_date=utc_date,
         ),
@@ -400,9 +379,7 @@ def test_with_revision_downgrades_iso_2_0_to_1_0() -> None:
 
 def test_with_revision_rejects_incompatible_data_type_unless_replaced() -> None:
     sdf = sdfio.SdfFile(
-        header=sdfio.Header(
-            revision=Revision.ISO_2_0, num_points=1, num_profiles=1, data_type=DataType.BINARY32
-        ),
+        header=sdfio.Header(revision=Revision.ISO_2_0, data_type=DataType.BINARY32),
         data=np.array([[1.0]]),
     )
     with pytest.raises(SdfFormatError, match="not valid for SDF revision"):
@@ -417,8 +394,6 @@ def test_with_revision_rejects_non_tagged_trailer_unless_replaced() -> None:
     sdf = sdfio.SdfFile(
         header=sdfio.Header(
             revision=Revision.ISO_1_0,
-            num_points=1,
-            num_profiles=1,
             create_date=naive_date,
             mod_date=naive_date,
         ),
@@ -435,9 +410,7 @@ def test_with_revision_rejects_non_tagged_trailer_unless_replaced() -> None:
 def test_save_can_convert_format() -> None:
     data = _sample_data()
     sdf = sdfio.SdfFile(
-        header=sdfio.Header(
-            format=FileFormat.BINARY, num_points=3, num_profiles=2, x_scale=1e-6, y_scale=1e-6
-        ),
+        header=sdfio.Header(format=FileFormat.BINARY, x_scale=1e-6, y_scale=1e-6),
         data=data,
     )
 
@@ -461,9 +434,7 @@ def test_write_rejects_non_positive_z_scale(z_scale: float) -> None:
 @pytest.mark.parametrize("z_scale", [0.0, -1e-6])
 def test_dumps_rejects_non_positive_z_scale(z_scale: float) -> None:
     """The check must hold for direct Header/SdfFile construction too, not just write()."""
-    sdf = sdfio.SdfFile(
-        header=sdfio.Header(num_points=1, num_profiles=1, z_scale=z_scale), data=np.zeros((1, 1))
-    )
+    sdf = sdfio.SdfFile(header=sdfio.Header(z_scale=z_scale), data=np.zeros((1, 1)))
 
     with pytest.raises(SdfFormatError, match="z_scale must be a positive number"):
         sdf.dumps()
@@ -475,8 +446,6 @@ def test_sdffile_loads_dumps_roundtrip(file_format: FileFormat) -> None:
     header = sdfio.Header(
         revision=Revision.ISO_2_0,
         format=file_format,
-        num_points=3,
-        num_profiles=2,
         x_scale=1e-6,
         y_scale=1e-6,
         z_scale=1e-7,
@@ -495,7 +464,7 @@ def test_sdffile_loads_dumps_roundtrip(file_format: FileFormat) -> None:
 def test_sdffile_open_save_via_binary_stream() -> None:
     data = _sample_data()
     sdf = sdfio.SdfFile(
-        header=sdfio.Header(num_points=3, num_profiles=2, x_scale=1e-6, y_scale=1e-6),
+        header=sdfio.Header(x_scale=1e-6, y_scale=1e-6),
         data=data,
     )
 
@@ -513,7 +482,7 @@ def test_sdffile_loads_rejects_unknown_magic() -> None:
 
 
 def test_sdffile_eq_compares_nan_aware_data() -> None:
-    header = sdfio.Header(num_points=2, num_profiles=1)
+    header = sdfio.Header()
     data = np.array([[1.0, np.nan]])
 
     a = sdfio.SdfFile(header=header, data=data.copy())
@@ -531,8 +500,6 @@ def test_loads_detects_upper_case_magic_prefix(file_format: FileFormat) -> None:
         header=sdfio.Header(
             revision=Revision.BCR_1_0,
             format=file_format,
-            num_points=1,
-            num_profiles=1,
             data_type=DataType.BINARY64,
         ),
         data=np.zeros((1, 1)),
@@ -547,7 +514,7 @@ def test_from_array_builds_the_file_without_writing_it() -> None:
 
     assert sdf.header.revision == Revision.ISO_2_0
     assert sdf.header.format is FileFormat.BINARY
-    assert (sdf.header.num_profiles, sdf.header.num_points) == (2, 3)
+    assert sdf.data.shape == (2, 3)
     assert (sdf.header.x_scale, sdf.header.y_scale, sdf.header.z_scale) == (1e-6, 2e-6, 1e-9)
     assert sdf.header.data_type == DataType.BINARY64
     assert sdf.header.create_date is not None
@@ -730,7 +697,7 @@ def test_a_file_that_is_only_a_byte_order_mark_is_not_an_sdf_file() -> None:
 def test_with_data_follows_the_shape_and_keeps_the_rest() -> None:
     sdf = sdfio.SdfFile.from_array(np.zeros((4, 6)), x_scale=1e-6, y_scale=2e-6, trailer="Note = a")
     part = sdf.with_data(np.ones((2, 3)), x_scale=3e-6)
-    assert (part.header.num_profiles, part.header.num_points) == (2, 3)
+    assert part.data.shape == (2, 3)
     assert (part.header.x_scale, part.header.y_scale) == (3e-6, 2e-6)
     assert part.header.create_date == sdf.header.create_date
     assert part.trailer == "Note = a"

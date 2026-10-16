@@ -57,7 +57,7 @@ character `*`, and the last of these lines ends the file.
 | `CreateDate` | When the data was generated, as `DDMMYYYYhhmm`. All zeros stand for a time that is not recorded. sdfio holds the time as UTC in memory, and writes it as UTC for `ISO-2.0` and as local time for the older versions. |
 | `ModDate` | When the file was last modified, in the same form. |
 | `NumPoints` | The number of columns of the matrix. |
-| `NumProfiles` | The number of rows of the matrix. It is 1 for a profile, which `is_profile` of the header and of the file tests. |
+| `NumProfiles` | The number of rows of the matrix. It is 1 for a profile, which `is_profile` of the file tests. |
 | `Xscale` | The sampling interval along x in metres. |
 | `Yscale` | The sampling interval along y in metres. It has no meaning for a profile. |
 | `Zscale` | The factor that turns a coded height into metres. It is positive. |

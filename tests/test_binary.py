@@ -25,8 +25,6 @@ def _make_header(**overrides: Any) -> Header:
         "revision": Revision.ISO_2_0,
         "format": FileFormat.BINARY,
         "manufacturer_id": "sdfio",
-        "num_points": 3,
-        "num_profiles": 2,
         "x_scale": 1e-6,
         "y_scale": 1e-6,
         "z_scale": 1e-6,
@@ -55,8 +53,7 @@ def test_roundtrip(revision: Revision, data_type: int) -> None:
 
     assert read_header.revision == revision
     assert read_header.data_type == data_type
-    assert read_header.num_points == 3
-    assert read_header.num_profiles == 2
+    assert read_data.shape == (2, 3)
     assert read_header.manufacturer_id == "sdfio"
     np.testing.assert_allclose(read_data, data, rtol=1e-6, atol=1e-9, equal_nan=True)
     assert trailer == b"Note = hello"
@@ -64,9 +61,7 @@ def test_roundtrip(revision: Revision, data_type: int) -> None:
 
 @pytest.mark.parametrize("data_type", [3, 4])
 def test_roundtrip_iso_2_0_only_data_types(data_type: int) -> None:
-    header = _make_header(
-        revision=Revision.ISO_2_0, data_type=data_type, num_points=2, num_profiles=1
-    )
+    header = _make_header(revision=Revision.ISO_2_0, data_type=data_type)
     data = np.array([[1e-6, -1e-6]])
     buffer = io.BytesIO()
     _binary.dump(header, data, buffer)
@@ -81,13 +76,13 @@ def test_load_rejects_ascii_magic() -> None:
 
 
 def test_dump_rejects_out_of_range_integer_value() -> None:
-    header = _make_header(data_type=4, num_points=1, num_profiles=1)  # int8
+    header = _make_header(data_type=4)  # int8
     with pytest.raises(SdfFormatError, match="out of range"):
         _binary.dump(header, np.array([[1000.0]]), io.BytesIO())
 
 
 def test_dump_rejects_sentinel_collision() -> None:
-    header = _make_header(data_type=4, num_points=1, num_profiles=1, z_scale=1.0)  # int8
+    header = _make_header(data_type=4, z_scale=1.0)  # int8
     with pytest.raises(SdfFormatError, match="invalid-point sentinel"):
         _binary.dump(header, np.array([[-128.0]]), io.BytesIO())
 
@@ -148,7 +143,7 @@ def test_load_rejects_unsupported_data_type_for_revision() -> None:
 
 
 def test_load_rejects_truncated_data_area() -> None:
-    header = _make_header(num_points=4, num_profiles=4)
+    header = _make_header()
     buffer = io.BytesIO()
     _binary.dump(header, np.zeros((4, 4)), buffer)
     truncated = buffer.getvalue()[:-4]
@@ -156,14 +151,8 @@ def test_load_rejects_truncated_data_area() -> None:
         _binary.load(io.BytesIO(truncated))
 
 
-def test_dump_rejects_shape_mismatch() -> None:
-    header = _make_header(num_points=2, num_profiles=2)
-    with pytest.raises(SdfFormatError, match="does not match header shape"):
-        _binary.dump(header, np.zeros((3, 3)), io.BytesIO())
-
-
 def test_dump_rejects_unsupported_revision() -> None:
-    header = _make_header(num_points=1, num_profiles=1)
+    header = _make_header()
     # Bypass Header.__post_init__ validation to test dump()'s own check.
     header.revision = "3.0"  # type: ignore[assignment]
     with pytest.raises(SdfFormatError, match="Unsupported SDF revision"):
@@ -171,36 +160,36 @@ def test_dump_rejects_unsupported_revision() -> None:
 
 
 def test_dump_rejects_malformed_v2_trailer() -> None:
-    header = _make_header(revision=Revision.ISO_2_0, num_points=1, num_profiles=1)
+    header = _make_header(revision=Revision.ISO_2_0)
     with pytest.raises(SdfFormatError, match="tagged 'Name = Value' format"):
         _binary.dump(header, np.zeros((1, 1)), io.BytesIO(), trailer=b"not tagged fields")
 
 
 def test_dump_allows_tagged_v2_trailer() -> None:
-    header = _make_header(revision=Revision.ISO_2_0, num_points=1, num_profiles=1)
+    header = _make_header(revision=Revision.ISO_2_0)
     _binary.dump(header, np.zeros((1, 1)), io.BytesIO(), trailer=b"Note = hello")
 
 
 def test_dump_allows_empty_v2_trailer() -> None:
-    header = _make_header(revision=Revision.ISO_2_0, num_points=1, num_profiles=1)
+    header = _make_header(revision=Revision.ISO_2_0)
     _binary.dump(header, np.zeros((1, 1)), io.BytesIO(), trailer=b"")
 
 
 def test_dump_rejects_non_ascii_trailer() -> None:
-    header = _make_header(num_points=1, num_profiles=1)
+    header = _make_header()
     with pytest.raises(SdfFormatError, match="must be 7-bit ASCII"):
         _binary.dump(header, np.zeros((1, 1)), io.BytesIO(), trailer="Müller café".encode())
 
 
 def test_dump_rejects_non_ascii_manufacturer_id() -> None:
-    header = _make_header(num_points=1, num_profiles=1, manufacturer_id="Müller")
+    header = _make_header(manufacturer_id="Müller")
     with pytest.raises(SdfFormatError, match="manufacturer_id must be 7-bit ASCII"):
         _binary.dump(header, np.zeros((1, 1)), io.BytesIO())
 
 
 def test_load_truncates_manufacturer_id_at_first_nul() -> None:
     """BCR allows a NUL-terminated ManufacID (some ISO writers do too); strip past the NUL."""
-    header = _make_header(num_points=1, num_profiles=1)
+    header = _make_header()
     buffer = io.BytesIO()
     _binary.dump(header, np.zeros((1, 1)), buffer)
     raw = bytearray(buffer.getvalue())
@@ -214,7 +203,7 @@ def test_load_truncates_manufacturer_id_at_first_nul() -> None:
 
 def test_load_returns_non_ascii_trailer_as_is() -> None:
     """A non-compliant trailer must not prevent reading the (already-decoded) depth data."""
-    header = _make_header(num_points=1, num_profiles=1)
+    header = _make_header()
     buffer = io.BytesIO()
     _binary.dump(header, np.zeros((1, 1)), buffer)
     buffer.write("Müller café".encode())  # append a non-compliant trailer after the fact
@@ -227,32 +216,32 @@ def test_load_returns_non_ascii_trailer_as_is() -> None:
 
 
 def test_dump_rejects_data_type_invalid_for_revision() -> None:
-    header = _make_header(revision=Revision.ISO_1_0, data_type=3, num_points=2, num_profiles=1)
+    header = _make_header(revision=Revision.ISO_1_0, data_type=3)
     with pytest.raises(SdfFormatError, match="not valid for SDF revision"):
         _binary.dump(header, np.zeros((1, 2)), io.BytesIO())
 
 
 def test_dump_rejects_num_points_exceeding_revision_width() -> None:
-    header = _make_header(revision=Revision.ISO_1_0, data_type=7, num_points=70000, num_profiles=1)
+    header = _make_header(revision=Revision.ISO_1_0, data_type=7)
     with pytest.raises(SdfFormatError, match="NumPoints/NumProfiles must be between"):
         _binary.dump(header, np.zeros((1, 70000)), io.BytesIO())
 
 
 def test_dumps_loads_roundtrip() -> None:
-    header = _make_header(num_points=2, num_profiles=1)
+    header = _make_header()
     data = np.array([[1e-6, np.nan]])
     blob = _binary.dumps(header, data, trailer=b"Note = a")
     assert isinstance(blob, bytes)
 
-    round_tripped_header, round_tripped_data, trailer = _binary.loads(blob)
+    _header, round_tripped_data, trailer = _binary.loads(blob)
 
-    assert round_tripped_header.num_points == 2
+    assert round_tripped_data.shape == (1, 2)
     assert trailer == b"Note = a"
     np.testing.assert_allclose(round_tripped_data, data, equal_nan=True)
 
 
 def test_roundtrip_bcr_revision() -> None:
-    header = _make_header(revision=Revision.BCR_1_0, data_type=3, num_points=2, num_profiles=1)
+    header = _make_header(revision=Revision.BCR_1_0, data_type=3)
     data = np.array([[1e-6, -2e-6]])
     buffer = io.BytesIO()
     _binary.dump(header, data, buffer)
@@ -268,12 +257,8 @@ def test_dump_reverses_profile_order_for_bcr_on_disk() -> None:
     # Each row has a distinct value so the on-disk row order is directly
     # observable, independent of the revision-aware unflipping load() does.
     data = np.array([[0.0], [1.0], [2.0], [3.0]])
-    iso_header = _make_header(
-        revision=Revision.ISO_1_0, data_type=7, num_points=1, num_profiles=4, z_scale=1.0
-    )
-    bcr_header = _make_header(
-        revision=Revision.BCR_1_0, data_type=7, num_points=1, num_profiles=4, z_scale=1.0
-    )
+    iso_header = _make_header(revision=Revision.ISO_1_0, data_type=7, z_scale=1.0)
+    bcr_header = _make_header(revision=Revision.BCR_1_0, data_type=7, z_scale=1.0)
 
     iso_blob = _binary.dumps(iso_header, data)
     bcr_blob = _binary.dumps(bcr_header, data)
@@ -295,7 +280,7 @@ def test_dump_reverses_profile_order_for_bcr_on_disk() -> None:
 
 
 def test_roundtrip_none_dates() -> None:
-    header = _make_header(num_points=1, num_profiles=1, create_date=None, mod_date=None)
+    header = _make_header(create_date=None, mod_date=None)
     buffer = io.BytesIO()
     _binary.dump(header, np.zeros((1, 1)), buffer)
     buffer.seek(0)
@@ -334,7 +319,7 @@ def test_load_rejects_bcr_checksum_too() -> None:
 
 def test_loads_accepts_upper_case_binary_prefix() -> None:
     # BCR-1.0 allows "b" or "B" as the first magic character.
-    header = _make_header(revision=Revision.BCR_1_0, data_type=7, num_points=1, num_profiles=1)
+    header = _make_header(revision=Revision.BCR_1_0, data_type=7)
     blob = _binary.dumps(header, np.zeros((1, 1)))
     read_header, _data, _trailer = _binary.loads(b"B" + blob[1:])
     assert read_header.revision == Revision.BCR_1_0
@@ -357,19 +342,17 @@ def test_binary_files_of_the_older_revisions_hold_at_most_the_max_count(
         header = Header(
             revision=revision,
             format=format,
-            num_points=points,
-            num_profiles=1,
             z_scale=1e-9,
             data_type=data_type,
         )
         return SdfFile(header=header, data=np.zeros((1, points))).dumps()
 
-    assert sdfio.SdfFile.loads(write(limit, format=FileFormat.BINARY)).header.num_points == limit
+    assert sdfio.SdfFile.loads(write(limit, format=FileFormat.BINARY)).data.shape == (1, limit)
     with pytest.raises(SdfFormatError, match=str(limit)):
         write(limit + 1, format=FileFormat.BINARY)
-    assert (
-        sdfio.SdfFile.loads(write(limit + 1, format=FileFormat.ASCII)).header.num_points
-        == limit + 1
+    assert sdfio.SdfFile.loads(write(limit + 1, format=FileFormat.ASCII)).data.shape == (
+        1,
+        limit + 1,
     )
 
 
@@ -435,7 +418,7 @@ def test_a_z_scale_without_a_sensible_product_is_read_without_a_warning(
     z_scale: float, data_type: DataType
 ) -> None:
     # The writer refuses such a scale, so a file that holds one is made by hand.
-    header = Header(num_points=3, num_profiles=2, z_scale=1e-9, data_type=data_type)
+    header = Header(z_scale=1e-9, data_type=data_type)
     valid = sdfio.SdfFile(header=header, data=np.zeros((2, 3))).dumps()
     scale_at = 8 + 10 + 24 + 8 + 8 + 8  # up to Zscale in a version 2.0 header
     blob = valid[:scale_at] + struct.pack("<d", z_scale) + valid[scale_at + 8 :]

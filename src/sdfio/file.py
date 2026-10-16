@@ -80,7 +80,7 @@ class SdfFile:
         opposite pairing, contradicting the formula and figure; a later
         edition fixes that sentence to agree with the formula instead.
         """
-        return np.arange(self.header.num_points) * self.header.x_scale
+        return np.arange(self.data.shape[1]) * self.header.x_scale
 
     @property
     def y_axis(self) -> np.ndarray:
@@ -97,7 +97,7 @@ class SdfFile:
         For a profile (:attr:`is_profile`), the standard calls ``y_scale``
         meaningless; this returns ``[0.0]`` regardless of its value.
         """
-        return np.arange(self.header.num_profiles) * self.header.y_scale
+        return np.arange(self.data.shape[0]) * self.header.y_scale
 
     def points(self, *, drop_invalid: bool = False) -> np.ndarray:
         """Return the points of the grid as an ``(num_profiles, num_points, 3)`` array in metres.
@@ -111,12 +111,10 @@ class SdfFile:
 
         :param drop_invalid: Leave out the points that are not measured. The result is then the
             ``(N, 3)`` array of the measured points, row by row, and the shape of the grid is lost.
-        :raises SdfFormatError: If the shape of ``data`` is not
-            ``(header.num_profiles, header.num_points)``.
 
         >>> import numpy as np
         >>> from sdfio import SdfFile, Header
-        >>> header = Header(num_points=3, num_profiles=2, x_scale=1e-6, y_scale=2e-6)
+        >>> header = Header(x_scale=1e-6, y_scale=2e-6)
         >>> sdf = SdfFile(header=header, data=np.array([[0.0, 1.0, 2.0], [3.0, np.nan, 5.0]]))
         >>> points = sdf.points()
         >>> points.shape
@@ -126,12 +124,7 @@ class SdfFile:
         >>> sdf.points(drop_invalid=True).shape
         (5, 3)
         """
-        shape = (self.header.num_profiles, self.header.num_points)
-        if self.data.shape != shape:
-            raise SdfFormatError(
-                f"The data has the shape {self.data.shape}, but the header says {shape}"
-            )
-        grid = np.empty((*shape, 3), dtype=np.float64)
+        grid = np.empty((*self.data.shape, 3), dtype=np.float64)
         grid[..., 0] = self.x_axis
         grid[..., 1] = self.y_axis[:, np.newaxis]
         grid[..., 2] = self.data
@@ -144,17 +137,18 @@ class SdfFile:
     def is_profile(self) -> bool:
         """Whether the file holds a profile and not an areal surface.
 
-        A convenience for ``header.is_profile``: the standard defines a profile as ``num_profiles``
-        being 1.
+        The standard defines a profile as a file with one row ("in case of a profile, the value
+        of 'Number of rows in the data matrix' is 1") and calls ``y_scale`` meaningless for it.
+        A surface with a single row is therefore a profile.
 
         >>> import numpy as np
         >>> from sdfio import SdfFile, Header
-        >>> profile = SdfFile(header=Header(num_points=3, num_profiles=1), data=np.zeros((1, 3)))
-        >>> surface = SdfFile(header=Header(num_points=3, num_profiles=2), data=np.zeros((2, 3)))
+        >>> profile = SdfFile(header=Header(), data=np.zeros((1, 3)))
+        >>> surface = SdfFile(header=Header(), data=np.zeros((2, 3)))
         >>> profile.is_profile, surface.is_profile
         (True, False)
         """
-        return self.header.is_profile
+        return bool(self.data.shape[0] == 1)
 
     @property
     def data_type(self) -> DataType:
@@ -274,10 +268,9 @@ class SdfFile:
     ) -> SdfFile:
         """Return a copy with other heights, for example a part of this file.
 
-        The number of points and profiles follow the shape of ``data``; the rest of the header
-        and the trailer are kept. Like :meth:`from_array`, this only checks the shape of
-        ``data``; whether it fits the data type and the ``z_scale`` is checked when the file is
-        written.
+        The rest of the header and the trailer are kept. Like :meth:`from_array`, this only
+        checks the shape of ``data``; whether it fits the data type and the ``z_scale`` is checked
+        when the file is written.
 
         :param data: ``(num_profiles, num_points)`` array of height values in metres.
         :param x_scale: New sampling interval along x, in metres, if it is not the one of the file.
@@ -287,16 +280,14 @@ class SdfFile:
         >>> import numpy as np
         >>> sdf = SdfFile.from_array(np.zeros((4, 6)), x_scale=1e-6, y_scale=1e-6)
         >>> part = sdf.with_data(sdf.data[1:3, ::2], x_scale=2e-6)
-        >>> part.data.shape, part.header.num_profiles, part.header.num_points, part.header.x_scale
-        ((2, 3), 2, 3, 2e-06)
+        >>> part.data.shape, part.header.x_scale
+        ((2, 3), 2e-06)
         """
         array = np.asarray(data, dtype=np.float64)
         if array.ndim != 2:
             raise SdfFormatError("SDF data must be a 2-D (num_profiles, num_points) array")
         header = replace(
             self.header,
-            num_profiles=array.shape[0],
-            num_points=array.shape[1],
             x_scale=self.header.x_scale if x_scale is None else x_scale,
             y_scale=self.header.y_scale if y_scale is None else y_scale,
         )
@@ -386,8 +377,7 @@ class SdfFile:
             ``manufacturer_id``, ``create_date``, ``mod_date``, ``z_resolution``,
             ``data_type``); defaults to :class:`Metadata`'s own defaults
             (ISO-2.0, ``binary64``, the current time). Every field on it is used as given --
-            there is no overlap with ``x_scale``/``y_scale``/``z_scale``/``format`` above, or
-            with ``num_points``/``num_profiles``, which are always taken from ``data``'s shape.
+            there is no overlap with ``x_scale``/``y_scale``/``z_scale``/``format`` above.
             Pass a shared template to build several files with the same metadata, e.g.
             ``metadata=Metadata(manufacturer_id="acme")``. ``manufacturer_id`` must be 7-bit
             ASCII; values longer than 10 bytes are silently truncated. The dates are held as UTC
@@ -418,8 +408,6 @@ class SdfFile:
             manufacturer_id=meta.manufacturer_id,
             create_date=meta.create_date or now,
             mod_date=meta.mod_date or now,
-            num_points=array.shape[1],
-            num_profiles=array.shape[0],
             x_scale=x_scale,
             y_scale=y_scale,
             z_scale=resolved_z_scale,
@@ -562,10 +550,8 @@ def write(
         ``data_type``); defaults to :class:`Metadata`'s own defaults
         (ISO-2.0, ``binary64``, current UTC timestamps). Every field on it is
         used as given -- there is no overlap with
-        ``x_scale``/``y_scale``/``z_scale``/``format`` above, or with
-        ``num_points``/``num_profiles``, which are always taken from
-        ``data``'s shape. Pass a shared template to write several files with
-        the same metadata, e.g. ``metadata=Metadata(manufacturer_id="acme")``.
+        ``x_scale``/``y_scale``/``z_scale``/``format`` above. Pass a shared template to write
+        several files with the same metadata, e.g. ``metadata=Metadata(manufacturer_id="acme")``.
         ``manufacturer_id`` must be 7-bit ASCII; values longer than 10 bytes
         are silently truncated.
     :param trailer: Optional record 3 trailer content; must be 7-bit ASCII.
