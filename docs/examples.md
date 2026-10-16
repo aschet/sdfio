@@ -9,58 +9,34 @@ SPDX-License-Identifier: MIT
 The scripts are in the `examples/` folder. Short examples of the common use cases are also at the
 top of the API reference.
 
-## Surfaces
+## Writing
 
-```{literalinclude} ../examples/01_surfaces.py
+Surfaces and profiles, with metadata and a trailer, in different revisions, data types and
+representations.
+
+```{literalinclude} ../examples/write.py
 :language: python
-:start-after: "License-Identifier"
 ```
 
-## Profiles
+## Reading
 
-```{literalinclude} ../examples/02_profiles.py
+The heights, the points, the header and the trailer of a file, from a path, a stream or bytes.
+
+```{literalinclude} ../examples/read.py
 :language: python
-:start-after: "License-Identifier"
 ```
 
-## Missing Points
+## Modifying
 
-```{literalinclude} ../examples/03_missing_points.py
+Changing the values, making files of parts of a file, and converting it to another revision, data
+type or representation.
+
+```{literalinclude} ../examples/modify.py
 :language: python
-:start-after: "License-Identifier"
-```
-
-## Revisions and Data Types
-
-```{literalinclude} ../examples/04_revisions_and_data_types.py
-:language: python
-:start-after: "License-Identifier"
-```
-
-## Header and Trailer
-
-```{literalinclude} ../examples/05_header_and_trailer.py
-:language: python
-:start-after: "License-Identifier"
-```
-
-## Reading Files
-
-```{literalinclude} ../examples/06_reading_files.py
-:language: python
-:start-after: "License-Identifier"
-```
-
-## Modifying Values
-
-```{literalinclude} ../examples/07_modifying_values.py
-:language: python
-:start-after: "License-Identifier"
 ```
 
 ## Plotting
 
-```{literalinclude} ../examples/08_plotting.py
+```{literalinclude} ../examples/plot.py
 :language: python
-:start-after: "License-Identifier"
 ```
