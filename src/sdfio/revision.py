@@ -9,11 +9,14 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, replace
 from enum import Enum, StrEnum, auto
-from typing import Final
+from typing import TYPE_CHECKING, Final
 
 import numpy as np
 
 from .exceptions import SdfFormatError
+
+if TYPE_CHECKING:
+    from .datatypes import DataType
 
 __all__ = [
     "ASCII_PREFIX",
@@ -66,6 +69,17 @@ class Revision(StrEnum):
                 f"Unknown or unsupported SDF revision {family_text}-{version_text!r} "
                 f"in magic {magic!r}"
             ) from None
+
+    @property
+    def data_types(self) -> tuple[DataType, ...]:
+        """Return the data types of the data area that this revision has, by their codes.
+
+        >>> [data_type.name for data_type in Revision.ISO_1_0.data_types]
+        ['INT16', 'INT32', 'BINARY64']
+        """
+        from .datatypes import DATA_TYPES  # datatypes needs this module for its table
+
+        return tuple(data_type for data_type, info in DATA_TYPES.items() if info.is_supported(self))
 
     @property
     def rules(self) -> RevisionRules:

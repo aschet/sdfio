@@ -183,7 +183,7 @@ def test_suggest_z_scale_maximizes_resolution() -> None:
     data_type = get_data_type(DataType.INT16)  # range -32767..32767 (excl. sentinel)
     data = np.array([1.0e-3, -0.5e-3, np.nan])
 
-    z_scale = suggest_z_scale(data, data_type)
+    z_scale = suggest_z_scale(data, data_type.type)
     raw = encode_raw(data, data_type, z_scale)
 
     assert raw[np.argmax(data[:2])] == 32767  # uses the full positive range
@@ -193,20 +193,20 @@ def test_suggest_z_scale_maximizes_resolution() -> None:
 def test_suggest_z_scale_handles_negative_dominant_range() -> None:
     data_type = get_data_type(DataType.INT8)
     data = np.array([-100.0, 1.0])
-    z_scale = suggest_z_scale(data, data_type)
+    z_scale = suggest_z_scale(data, data_type.type)
     # Must not raise: the suggested scale keeps both extremes in range.
     encode_raw(data, data_type, z_scale)
 
 
 def test_suggest_z_scale_returns_one_for_all_nan_or_zero() -> None:
     data_type = get_data_type(DataType.INT16)
-    assert suggest_z_scale(np.array([np.nan, np.nan]), data_type) == 1.0
-    assert suggest_z_scale(np.array([0.0, 0.0]), data_type) == 1.0
+    assert suggest_z_scale(np.array([np.nan, np.nan]), data_type.type) == 1.0
+    assert suggest_z_scale(np.array([0.0, 0.0]), data_type.type) == 1.0
 
 
 def test_suggest_z_scale_is_a_noop_for_float_types() -> None:
     data_type = get_data_type(DataType.BINARY64)
-    assert suggest_z_scale(np.array([1.0e10, -1.0e10]), data_type) == 1.0
+    assert suggest_z_scale(np.array([1.0e10, -1.0e10]), data_type.type) == 1.0
 
 
 def test_suggest_z_scale_maximizes_resolution_bcr() -> None:
@@ -216,7 +216,7 @@ def test_suggest_z_scale_maximizes_resolution_bcr() -> None:
     data_type = get_data_type(DataType.INT16)
     data = np.array([1.0e-3, -0.5e-3, np.nan])
 
-    z_scale = suggest_z_scale(data, data_type, Revision.BCR_1_0)
+    z_scale = suggest_z_scale(data, data_type.type, Revision.BCR_1_0)
     raw = encode_raw(data, data_type, z_scale, Revision.BCR_1_0)
 
     assert raw[np.argmax(data[:2])] == 32766  # avoids the reserved maximum, 32767
@@ -259,3 +259,9 @@ def test_validate_data_range_rejects_bcr_float_value_at_nominal_maximum() -> Non
         data_type=data_type,
         revision=Revision.BCR_1_0,
     )
+
+
+def test_a_revision_lists_the_data_types_it_has() -> None:
+    assert Revision.ISO_1_0.data_types == (DataType.INT16, DataType.INT32, DataType.BINARY64)
+    assert Revision.BCR_1_0.data_types == tuple(DataType)
+    assert DataType.INT8 in Revision.ISO_2_0.data_types

@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 import sdfio
-from sdfio.datatypes import DataType, get_data_type, suggest_z_scale
+from sdfio.datatypes import DataType, suggest_z_scale
 from sdfio.exceptions import SdfFormatError
 from sdfio.revision import FileFormat, Revision
 
@@ -670,9 +670,7 @@ def test_with_revision_refits_a_z_scale_that_does_not_fit_the_new_data_type() ->
     converted = sdf.with_revision(Revision.ISO_2_0, data_type=DataType.INT16, refit_z_scale=True)
 
     assert converted.header.z_scale > 1e-9
-    assert converted.header.z_scale == suggest_z_scale(
-        sdf.data, get_data_type(DataType.INT16), Revision.ISO_2_0
-    )
+    assert converted.header.z_scale == suggest_z_scale(sdf.data, DataType.INT16, Revision.ISO_2_0)
     assert converted.raw_data() is not None  # it can be written now
     np.testing.assert_array_equal(converted.data, sdf.data)  # the heights are not changed
     assert converted.dumps()

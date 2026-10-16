@@ -207,7 +207,7 @@ class SdfFile:
             try:
                 encode_raw(self.data, resolved_data_type, z_scale, revision)
             except SdfFormatError:  # the data does not fit the new type at this scale
-                z_scale = suggest_z_scale(self.data, resolved_data_type, revision)
+                z_scale = suggest_z_scale(self.data, resolved_data_type.type, revision)
 
         new_header = replace(
             self.header,
@@ -327,9 +327,7 @@ class SdfFile:
         array = _as_grid(data)
         meta = metadata if metadata is not None else Metadata()
         resolved_z_scale = (
-            suggest_z_scale(array, get_data_type(meta.data_type), meta.revision)
-            if z_scale == "auto"
-            else z_scale
+            suggest_z_scale(array, meta.data_type, meta.revision) if z_scale == "auto" else z_scale
         )
         now = datetime.now(UTC)
         template = {field.name: getattr(meta, field.name) for field in fields(Metadata)}

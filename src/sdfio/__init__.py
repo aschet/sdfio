@@ -98,7 +98,7 @@ A file is converted to another revision, data type or representation with
 
 from __future__ import annotations
 
-from .datatypes import DataType, DataTypeInfo, get_data_type, suggest_z_scale
+from .datatypes import DataType, suggest_z_scale
 from .exceptions import SdfError, SdfFormatError, SdfVersionError
 from .file import SdfFile, read, write
 from .header import Header, Metadata
@@ -113,7 +113,6 @@ from .trailer import (
 __all__ = [
     "MAGICS",
     "DataType",
-    "DataTypeInfo",
     "FileFormat",
     "Header",
     "Metadata",
@@ -125,7 +124,6 @@ __all__ = [
     "SdfVersionError",
     "__version__",
     "format_tagged_fields",
-    "get_data_type",
     "parse_tagged_fields",
     "read",
     "sanitize_tagged_fields",

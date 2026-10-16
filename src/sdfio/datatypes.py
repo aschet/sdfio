@@ -234,7 +234,7 @@ def decode_raw(
 
 
 def suggest_z_scale(
-    data: np.ndarray, data_type: DataTypeInfo, revision: Revision = Revision.ISO_2_0
+    data: np.ndarray, data_type: DataType, revision: Revision = Revision.ISO_2_0
 ) -> float:
     """Suggest the smallest ``z_scale`` that encodes ``data`` without overflow.
 
@@ -252,11 +252,12 @@ def suggest_z_scale(
     :returns: A positive ``z_scale`` value, or ``1.0`` if ``data`` has no
         finite values or is not an integer data type.
     """
+    dtype = get_data_type(data_type).dtype
     finite = data[np.isfinite(data)]
-    if finite.size == 0 or not np.issubdtype(data_type.dtype, np.integer):
+    if finite.size == 0 or not np.issubdtype(dtype, np.integer):
         return 1.0
 
-    usable_min, usable_max = revision.rules.sentinel.usable_range(data_type.dtype)
+    usable_min, usable_max = revision.rules.sentinel.usable_range(dtype)
     high, low = float(finite.max()), float(finite.min())
     candidates = [high / usable_max] if high > 0 else []
     # usable_min is 0 for an unsigned dtype, which can't represent a negative value at any

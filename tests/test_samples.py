@@ -153,7 +153,7 @@ def test_the_ascii_and_the_binary_file_hold_the_same_data(revision: Revision, na
 def test_each_revision_has_samples_of_data_types_that_it_defines(revision: Revision) -> None:
     used = {sample.data_type for sample in generate.build(revision).values()}
     assert used == DATA_TYPES[revision]
-    assert all(sdfio.get_data_type(data_type).is_supported(revision) for data_type in used)
+    assert used <= set(revision.data_types)
 
 
 @pytest.mark.parametrize("case", CASES, ids=_id)
