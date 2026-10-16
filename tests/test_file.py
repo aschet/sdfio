@@ -703,3 +703,27 @@ def test_with_dialect_refits_for_the_target_dialect(
     assert converted.dumps()
     read_back = sdfio.SdfFile.loads(converted.dumps())
     np.testing.assert_allclose(read_back.data, converted.data, atol=converted.header.z_scale)
+
+
+@pytest.mark.parametrize("dialect", list(SdfDialect))
+def test_an_ascii_file_with_a_utf8_byte_order_mark_is_read(dialect: SdfDialect) -> None:
+    sdf = sdfio.SdfFile.from_array(
+        np.array([[1e-6, np.nan, 3e-6]]),
+        x_scale=1e-6,
+        y_scale=1e-6,
+        z_scale=1e-9,
+        format=FileFormat.ASCII,
+        metadata=sdfio.SdfMetadata(dialect=dialect, data_type=DataType.INT16),
+    )
+    plain = sdf.dumps()
+
+    for read in (sdfio.SdfFile.loads, lambda blob: sdfio.read(io.BytesIO(blob))):
+        loaded = read(b"\xef\xbb\xbf" + plain)
+        assert loaded.header.dialect == dialect
+        assert loaded.header.format is FileFormat.ASCII
+        np.testing.assert_allclose(loaded.data, sdfio.SdfFile.loads(plain).data, equal_nan=True)
+
+
+def test_a_file_that_is_only_a_byte_order_mark_is_not_an_sdf_file() -> None:
+    with pytest.raises(SdfFormatError, match="unexpected magic"):
+        sdfio.SdfFile.loads(b"\xef\xbb\xbf")

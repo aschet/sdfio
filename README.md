@@ -71,19 +71,27 @@ print(sdf.trailer_fields)
 
 ## Non-Compliant Files
 
-Reading tolerates known real-world deviations from the standard:
+Reading tolerates known real-world deviations from the standard, and behaviour that the
+standard does not define:
 
-- An all-zero `datetime` field parses as `None` ("not recorded").
+- A `datetime` field that is all zeros, blank or not a valid date parses as `None` ("not
+  recorded"); the rest of the file is read.
 - A binary `ManufacID` that's NUL-terminated instead of space-padded is
   truncated at the NUL byte (allowed by BCR-1.0).
+- Bytes that are not 7-bit ASCII in `ManufacID` are decoded with replacement characters, not
+  rejected.
 - ASCII records ending in LF or CR instead of CRLF are read normally (allowed
   by BCR-1.0).
+- A UTF-8 byte order mark in front of the magic is ignored.
 - An upper case `A` or `B` as the first magic character is accepted (allowed
   by BCR-1.0).
-- A trailer that isn't 7-bit ASCII is returned as-is, not rejected.
-- A `binary32`/`binary64` value written as `NaN` instead of the sentinel still decodes as a
-  non-measured point, and in ASCII files the text `NaN` is read as the marker `BAD`, for every
-  data type.
+- The marker `BAD` for a point that is not measured is accepted in BCR-1.0 ASCII files, which
+  otherwise use the maximum value of the data type.
+- In ASCII files the text `NaN` is read as the marker `BAD`, for every data type. In binary
+  files a `binary32`/`binary64` value written as `NaN` instead of the sentinel still decodes as a
+  non-measured point.
+- A trailer isn't validated on read: one that isn't 7-bit ASCII, or isn't in the tagged form
+  that ISO-2.0 requires, is returned as-is, not rejected.
 - `Xscale`, `Yscale` and `Zscale` are read as they are, also when they are zero, negative or not
   finite; the heights are then as meaningless as the scale, but never an error or a warning.
   Writing rejects such a `Zscale`.

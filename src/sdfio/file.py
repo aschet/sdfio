@@ -6,6 +6,7 @@
 
 from __future__ import annotations
 
+import codecs
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
@@ -394,10 +395,12 @@ class SdfFile:
     def loads(cls, data: bytes) -> SdfFile:
         """Parse an in-memory SDF blob, detecting the ASCII/binary format from its magic.
 
-        :param data: Full contents of a ``.sdf`` file, in either format.
+        :param data: Full contents of a ``.sdf`` file, in either format. A UTF-8 byte order mark
+            in front of the magic, which some tools write, is ignored.
         :raises SdfFormatError: If ``data`` does not start with a recognized
             SDF magic, or its contents are otherwise malformed.
         """
+        data = data.removeprefix(codecs.BOM_UTF8)
         ascii_prefix = ASCII_PREFIX.encode("ascii")
         binary_prefix = BINARY_PREFIX.encode("ascii")
         prefix = data[:1].lower()
