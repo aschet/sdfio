@@ -596,4 +596,4 @@ def write(
         format=format,
         metadata=metadata,
         trailer=trailer,
-    ).save(path, format=format)
+    ).save(path)
