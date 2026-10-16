@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
@@ -24,6 +25,26 @@ def test_cli_info_prints_header(tmp_path: Path, capsys: pytest.CaptureFixture[st
     output = capsys.readouterr().out
     assert "NumPoints   = 3" in output
     assert "NumProfiles = 2" in output
+
+
+@pytest.mark.parametrize("dialect", list(sdfio.SdfDialect))
+def test_cli_info_prints_the_dates_as_local_time(
+    dialect: sdfio.SdfDialect, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "surface.sdf"
+    created = datetime(2026, 10, 5, 12, 0, tzinfo=UTC)
+    modified = datetime(2026, 10, 6, 7, 30, tzinfo=UTC)
+    metadata = sdfio.SdfMetadata(
+        dialect=dialect, create_date=created, mod_date=modified, data_type=sdfio.DataType.INT16
+    )
+    sdfio.write(path, np.zeros((1, 2)), x_scale=1e-6, y_scale=1e-6, metadata=metadata)
+
+    assert main(["info", str(path)]) == 0
+
+    output = capsys.readouterr().out
+    # The clock of this machine, with its offset from UTC, whatever zone that is.
+    assert f"CreateDate  = {created.astimezone().isoformat(sep=' ', timespec='minutes')}" in output
+    assert f"ModDate     = {modified.astimezone().isoformat(sep=' ', timespec='minutes')}" in output
 
 
 def test_cli_info_prints_dialect(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:

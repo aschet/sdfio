@@ -348,9 +348,9 @@ def test_changing_data_type_incompatible_with_dialect_raises() -> None:
 
 
 def test_with_dialect_upgrades_iso_1_0_to_2_0() -> None:
-    # The standard only specifies UTC for version 2.0, so a naive date is
-    # presumed to already be local time; upgrading to ISO-2.0 then converts
-    # it to UTC, shifting the wall clock accordingly.
+    # Dates are held as UTC for every dialect, so upgrading to ISO-2.0 keeps
+    # them. A naive date is local time, which was converted to UTC when the
+    # header was made.
     naive_date = datetime(2024, 1, 1, 12, 0)
     sdf = sdfio.SdfFile(
         header=sdfio.SdfHeader(
@@ -362,8 +362,7 @@ def test_with_dialect_upgrades_iso_1_0_to_2_0() -> None:
         ),
         data=np.array([[1.0]]),
     )
-    assert sdf.header.create_date is not None
-    assert sdf.header.create_date.tzinfo is None
+    assert sdf.header.create_date == naive_date.astimezone(UTC)
 
     upgraded = sdf.with_dialect(SdfDialect.ISO_2_0)
 
@@ -378,9 +377,8 @@ def test_with_dialect_upgrades_iso_1_0_to_2_0() -> None:
 
 
 def test_with_dialect_downgrades_iso_2_0_to_1_0() -> None:
-    # The standard only specifies UTC for version 2.0, so a UTC-aware date
-    # is converted to the system's local timezone for version 1.0, rather
-    # than being kept as UTC.
+    # Dates are held as UTC for every dialect, so downgrading keeps them: it
+    # is when a version 1.0 file is written that they become local time.
     utc_date = datetime(2024, 1, 1, 12, 0, tzinfo=UTC)
     sdf = sdfio.SdfFile(
         header=sdfio.SdfHeader(

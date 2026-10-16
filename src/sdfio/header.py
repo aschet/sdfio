@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from enum import IntEnum, StrEnum
 
 from .exceptions import SdfFormatError, SdfVersionError
@@ -28,6 +28,7 @@ __all__ = [
     "parse_sdf_datetime",
     "parse_tagged_fields",
     "sanitize_tagged_fields",
+    "to_sdf_datetime",
     "validate_check_type",
     "validate_compression",
     "validate_manufacturer_id_ascii",
@@ -80,10 +81,12 @@ class SdfDialect(StrEnum):
 
     @property
     def requires_utc(self) -> bool:
-        """Whether ``create_date``/``mod_date`` must be timezone-aware UTC.
+        """Whether the file stores ``create_date``/``mod_date`` as UTC.
 
         True only for :attr:`ISO_2_0` -- the standard only mandates UTC
-        timestamps starting with version 2.0.
+        timestamps starting with version 2.0. The other dialects store local
+        time. In memory the dates are UTC for every dialect, see
+        :class:`SdfHeader`.
         """
         return self is SdfDialect.ISO_2_0
 
@@ -207,53 +210,76 @@ _DATETIME_FORMAT = "%d%m%Y%H%M"
 _UNSET_DATETIME = "0" * len("DDMMYYYYHHMM")
 
 
+def to_sdf_datetime(value: datetime | None) -> datetime | None:
+    """Return ``value`` as the timezone-aware UTC datetime that sdfio holds.
+
+    ``None`` stays ``None``. The ``datetime`` field of the standard has the resolution of a
+    minute, so the seconds and microseconds are dropped. A naive ``value`` is taken as local
+    time, like :meth:`datetime.astimezone` does.
+
+    >>> from datetime import timedelta, timezone
+    >>> to_sdf_datetime(datetime(2024, 1, 1, 14, 0, 24, tzinfo=timezone(timedelta(hours=2))))
+    datetime.datetime(2024, 1, 1, 12, 0, tzinfo=datetime.timezone.utc)
+    """
+    if value is None:
+        return None
+    return value.astimezone(UTC).replace(second=0, microsecond=0)
+
+
 def format_sdf_datetime(value: datetime | None, dialect: SdfDialect | None = None) -> str:
     """Format a datetime as the fixed-width SDF ``datetime`` field.
 
     :param value: ``None`` is formatted as the all-zero "not recorded"
-        placeholder (see :func:`parse_sdf_datetime`).
-    :param dialect: If :attr:`SdfDialect.requires_utc`, ``value`` is assumed
-        to already be UTC (as required by :class:`SdfHeader`) and its
-        wall-clock components are used as-is. Otherwise, or if omitted, the
-        dialect is treated as local time: a timezone-aware ``value`` is
-        converted to the system timezone first (see the limitation noted in
-        :func:`parse_sdf_datetime`); a naive ``value`` is assumed to already
-        represent local time and is used as-is.
+        placeholder (see :func:`parse_sdf_datetime`). A naive value is taken
+        as local time; the seconds are not written, as the field has the
+        resolution of a minute.
+    :param dialect: If :attr:`SdfDialect.requires_utc`, the field holds the
+        UTC wall clock. Otherwise, or if omitted, the dialect stores local
+        time, so the field holds the wall clock of the system timezone (see
+        the limitation noted in :func:`parse_sdf_datetime`).
     """
-    if value is None:
+    utc = to_sdf_datetime(value)
+    if utc is None:
         return _UNSET_DATETIME
-    if (dialect is None or not dialect.requires_utc) and value.tzinfo is not None:
-        value = value.astimezone()
-    return value.strftime(_DATETIME_FORMAT)
+    if dialect is None or not dialect.requires_utc:
+        utc = utc.astimezone()
+    return utc.strftime(_DATETIME_FORMAT)
 
 
 def parse_sdf_datetime(value: str, dialect: SdfDialect | None = None) -> datetime | None:
-    """Parse the fixed-width SDF ``datetime`` field.
+    """Parse the fixed-width SDF ``datetime`` field; the result is always UTC.
 
-    :param dialect: If :attr:`SdfDialect.requires_utc`, the result is tagged
-        with UTC ``tzinfo``. Otherwise, or if omitted, the dialect is
-        treated as local time, and the result is tagged with the system's
-        local timezone.
+    :param dialect: If :attr:`SdfDialect.requires_utc`, the field is UTC.
+        Otherwise, or if omitted, the dialect stores local time, which is
+        taken as the wall clock of the system timezone and converted to UTC.
 
         This is only correct if the file is read on a system in the same
         timezone it was written in -- neither format records the writer's
         actual timezone, so there is no way to recover it otherwise. A file
-        moved to a different timezone before being read, or converted to a
-        UTC-requiring dialect there, ends up with an incorrect UTC value;
-        this is a limitation of the format, not something sdfio can detect
-        or correct.
+        moved to a different timezone before being read ends up with an
+        incorrect value; this is a limitation of the format, not something
+        sdfio can detect or correct.
     :returns: ``None`` if ``value`` is the all-zero placeholder some files
-        use for a date that was never recorded.
+        use for a date that was never recorded, and also if it is not a date
+        in the form ``DDMMYYYYhhmm`` that the standard gives, such as a blank
+        field or a day 32. The date is secondary to the heights, so a file with
+        such a field is read, like one with a non-compliant trailer, and the
+        date is reported as not recorded.
     """
     stripped = value.strip()
-    if stripped == _UNSET_DATETIME:
+    if (
+        stripped == _UNSET_DATETIME
+        or len(stripped) != len(_UNSET_DATETIME)
+        or not stripped.isdigit()
+    ):
         return None
-    parsed = datetime.strptime(stripped, _DATETIME_FORMAT)
-    return (
-        parsed.replace(tzinfo=UTC)
-        if dialect is not None and dialect.requires_utc
-        else parsed.astimezone()
-    )
+    try:
+        parsed = datetime.strptime(stripped, _DATETIME_FORMAT)
+    except ValueError:  # a number that is no date, such as day 32 or month 13
+        return None
+    if dialect is not None and dialect.requires_utc:
+        return parsed.replace(tzinfo=UTC)
+    return to_sdf_datetime(parsed)
 
 
 #: Matches one "Name = Value" line of the tagged field format the header uses.
@@ -419,10 +445,14 @@ class SdfHeader:
     :param manufacturer_id: Measurement instrument manufacturer's identifier;
         may include the source of the data, hardware and software identifiers.
     :param create_date: Original creation date and time, or ``None`` if not
-        recorded in the file (see :func:`parse_sdf_datetime`); a dialect for
-        which :attr:`SdfDialect.requires_utc` is ``True`` requires UTC when set.
+        recorded in the file (see :func:`parse_sdf_datetime`). It is always
+        held as a timezone-aware UTC datetime with the resolution of a minute,
+        as the field has, whatever the dialect: any timezone-aware value is
+        converted when it is set, and a naive one is taken as local time. A
+        dialect for which :attr:`SdfDialect.requires_utc` is ``False`` writes
+        it as local time (see :func:`format_sdf_datetime`).
     :param mod_date: Last modification date and time, or ``None`` if not
-        recorded in the file; same UTC requirement as ``create_date``.
+        recorded in the file; held like ``create_date``.
     :param num_points: Number of columns *M* in the data matrix (x-direction).
     :param num_profiles: Number of rows *N* in the data matrix (y-direction).
         The standard uses ``1`` here for a profile (as opposed to an areal
@@ -438,8 +468,6 @@ class SdfHeader:
     :param data_type: ``DataType`` code, see :mod:`sdfio.datatypes`.
     :raises SdfVersionError: If ``dialect`` is not a valid :class:`SdfDialect`
         member.
-    :raises SdfFormatError: If ``dialect.requires_utc`` and ``create_date``
-        or ``mod_date`` is not a timezone-aware UTC datetime.
     """
 
     dialect: SdfDialect = SdfDialect.ISO_2_0
@@ -456,27 +484,19 @@ class SdfHeader:
     data_type: int = DataType.BINARY64
 
     def __post_init__(self) -> None:
-        """Coerce/validate the SDF dialect and, if it requires UTC, timestamp timezones."""
+        """Coerce and validate the SDF dialect."""
         try:
             self.dialect = SdfDialect(self.dialect)
         except ValueError:
             raise SdfVersionError(
                 f"Unsupported SDF dialect {self.dialect!r}, expected one of {tuple(SdfDialect)}"
             ) from None
-        if self.dialect.requires_utc:
-            for name, value in (("create_date", self.create_date), ("mod_date", self.mod_date)):
-                # A None date ("not recorded") has no timezone to validate,
-                # and is left as-is rather than rejected.
-                if value is None:
-                    continue
-                # utcoffset() (not "tzinfo is UTC") accepts any tzinfo that's
-                # equivalent to UTC, and doubles as the naive-datetime check
-                # (utcoffset() is None for those, which also != timedelta(0)).
-                if value.utcoffset() != timedelta(0):
-                    raise SdfFormatError(
-                        f"{name} must be a timezone-aware UTC datetime for SDF dialect "
-                        f"{self.dialect} (e.g. datetime.now(UTC)), got {value!r}"
-                    )
+
+    def __setattr__(self, name: str, value: object) -> None:
+        """Hold ``create_date`` and ``mod_date`` as UTC to the minute, whenever they are set."""
+        if name in ("create_date", "mod_date"):
+            value = to_sdf_datetime(value)  # type: ignore[arg-type]
+        super().__setattr__(name, value)
 
     @property
     def shape(self) -> tuple[int, int]:
@@ -515,9 +535,10 @@ class SdfMetadata:
     :param manufacturer_id: Measurement instrument manufacturer's identifier;
         may include the source of the data, hardware and software identifiers.
     :param create_date: Creation timestamp; ``None`` (the default) means the
-        current UTC time at the time :func:`sdfio.write` is called.
-    :param mod_date: Modification timestamp; ``None`` (the default) means the
-        current UTC time at the time :func:`sdfio.write` is called.
+        current UTC time at the time :func:`sdfio.write` is called. Held like
+        :attr:`SdfHeader.create_date`: as UTC to the minute.
+    :param mod_date: Modification timestamp, held and defaulting like
+        ``create_date``.
     :param z_resolution: Quantization step in metres, or a negative value if
         unknown.
     :param data_type: ``DataType`` code, see :mod:`sdfio.datatypes`; must be
@@ -530,3 +551,8 @@ class SdfMetadata:
     mod_date: datetime | None = None
     z_resolution: float = -1.0
     data_type: int = DataType.BINARY64
+
+    def __post_init__(self) -> None:
+        """Hold ``create_date`` and ``mod_date`` as UTC to the minute."""
+        object.__setattr__(self, "create_date", to_sdf_datetime(self.create_date))
+        object.__setattr__(self, "mod_date", to_sdf_datetime(self.mod_date))

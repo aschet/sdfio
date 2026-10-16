@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 import sys
 from collections.abc import Sequence
+from datetime import datetime
 
 from . import __version__
 from .datatypes import DataType
@@ -102,6 +103,16 @@ def _fix_trailer(text: str, dialect: SdfDialect) -> str:
     return "".join(f"{_ascii_safe(line)}\r\n" for line in text.splitlines())
 
 
+def _local_time(value: datetime | None) -> str:
+    """Return ``value`` as local time of the system with its UTC offset, to the minute.
+
+    The dates are held as UTC, but a person reading ``info`` expects the time on the clock.
+    """
+    if value is None:
+        return "(not recorded)"
+    return value.astimezone().isoformat(sep=" ", timespec="minutes")
+
+
 def _print_info(path: str) -> None:
     sdf = read(path)
     header = sdf.header
@@ -109,8 +120,8 @@ def _print_info(path: str) -> None:
         ("Format", "binary" if header.binary else "ASCII"),
         ("Dialect", header.dialect),
         ("ManufacID", header.manufacturer_id),
-        ("CreateDate", header.create_date if header.create_date is not None else "(not recorded)"),
-        ("ModDate", header.mod_date if header.mod_date is not None else "(not recorded)"),
+        ("CreateDate", _local_time(header.create_date)),
+        ("ModDate", _local_time(header.mod_date)),
         ("NumPoints", header.num_points),
         ("NumProfiles", header.num_profiles),
         ("Xscale", f"{header.x_scale:g}"),

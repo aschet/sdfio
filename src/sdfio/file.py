@@ -198,13 +198,10 @@ class SdfFile:
           to drop it).
 
         Timestamps need no such parameter: ``create_date``/``mod_date`` are
-        converted to ``dialect``'s timezone convention automatically (UTC if
-        :attr:`SdfDialect.requires_utc`, the system's local timezone
-        otherwise), shifting the wall clock as needed. A naive date is
-        presumed to already be local time. This conversion is only correct
-        if the current process is running in the same timezone the file was
-        originally written in -- see :func:`sdfio.header.parse_sdf_datetime`
-        for why.
+        held as UTC for every dialect and are converted to the convention of
+        ``dialect`` (UTC, or the local time of the system for the older
+        dialects) when the file is written, see
+        :func:`sdfio.header.format_sdf_datetime`.
 
         :raises SdfFormatError: If ``data_type`` isn't valid for ``dialect``,
             or the trailer isn't valid for ``dialect``.
@@ -238,17 +235,6 @@ class SdfFile:
                 f"{dialect}; pass a compatible data_type"
             )
 
-        create_date = self.header.create_date
-        mod_date = self.header.mod_date
-        if dialect.requires_utc:
-            # A None date ("not recorded") stays None. A naive date is
-            # presumed to already be local time (astimezone() on a naive
-            # datetime attaches the system timezone before converting).
-            if create_date is not None:
-                create_date = create_date.astimezone(UTC)
-            if mod_date is not None:
-                mod_date = mod_date.astimezone(UTC)
-
         new_trailer = self.trailer if trailer is None else trailer
         validate_trailer_tagged(dialect, new_trailer)
 
@@ -256,8 +242,6 @@ class SdfFile:
             self.header,
             dialect=dialect,
             data_type=resolved_data_type.type,
-            create_date=create_date,
-            mod_date=mod_date,
         )
         return SdfFile(header=new_header, data=self.data, trailer=new_trailer)
 

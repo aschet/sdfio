@@ -408,7 +408,8 @@ def test_loads_bcr_specification_example() -> None:
     assert header.dialect == SdfDialect.BCR_1_0
     assert header.manufacturer_id == "XYZ/T52"
     assert header.create_date is not None
-    assert header.create_date.strftime("%d%m%Y%H%M") == "040519931442"
+    # An ISO-1.0-like dialect stores local time; the date is held as UTC.
+    assert header.create_date.astimezone().strftime("%d%m%Y%H%M") == "040519931442"
     assert header.data_type == DataType.INT16  # "DataType =5"
     assert header.z_scale == pytest.approx(6.2564e-10)
     assert header.z_resolution == -1

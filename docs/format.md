@@ -54,7 +54,7 @@ character `*`, and the last of these lines ends the file.
 | Field | Content |
 | --- | --- |
 | `ManufacID` | Names where the data comes from, in up to 10 characters. |
-| `CreateDate` | When the data was generated, as `DDMMYYYYhhmm`. All zeros stand for a time that is not recorded. |
+| `CreateDate` | When the data was generated, as `DDMMYYYYhhmm`. All zeros stand for a time that is not recorded. sdfio holds the time as UTC in memory, and writes it as UTC for `ISO-2.0` and as local time for the older versions. |
 | `ModDate` | When the file was last modified, in the same form. |
 | `NumPoints` | The number of columns of the matrix. |
 | `NumProfiles` | The number of rows of the matrix. It is 1 for a profile, which `is_profile` of the header and of the file tests. |
