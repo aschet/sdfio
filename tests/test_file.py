@@ -319,13 +319,15 @@ def test_data_type_roundtrips_and_rejects_unknown_code() -> None:
 
 
 def test_changing_data_type_incompatible_with_revision_raises() -> None:
-    sdf = sdfio.SdfFile(
-        header=sdfio.Header(revision=Revision.ISO_1_0, data_type=DataType.INT16),
-        data=np.array([[1.0]]),
-    )
-    sdf.header.data_type = DataType.BINARY32  # ISO-2.0/BCR-1.0 only
+    header = sdfio.Header(revision=Revision.ISO_1_0, data_type=DataType.INT16)
     with pytest.raises(SdfFormatError, match="not valid for SDF revision"):
-        sdf.dumps()
+        header.data_type = DataType.BINARY32  # ISO-2.0/BCR-1.0 only
+
+
+def test_changing_the_revision_to_one_without_the_data_type_raises() -> None:
+    header = sdfio.Header(revision=Revision.ISO_2_0, data_type=DataType.INT8)
+    with pytest.raises(SdfFormatError, match="not valid for SDF revision"):
+        header.revision = Revision.ISO_1_0
 
 
 def test_with_revision_upgrades_iso_1_0_to_2_0() -> None:

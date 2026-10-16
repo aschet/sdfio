@@ -15,7 +15,7 @@ import pytest
 import sdfio
 from sdfio import _binary
 from sdfio.datatypes import DataType
-from sdfio.exceptions import SdfFormatError
+from sdfio.exceptions import SdfFormatError, SdfVersionError
 from sdfio.file import SdfFile
 from sdfio.header import Header
 from sdfio.revision import MAGIC_SIZE, FileFormat, Revision
@@ -152,12 +152,10 @@ def test_load_rejects_truncated_data_area() -> None:
         _binary.load(io.BytesIO(truncated))
 
 
-def test_dump_rejects_unsupported_revision() -> None:
+def test_a_header_rejects_an_unsupported_revision_when_it_is_set() -> None:
     header = _make_header()
-    # Bypass Header.__post_init__ validation to test dump()'s own check.
-    header.revision = "3.0"  # type: ignore[assignment]
-    with pytest.raises(SdfFormatError, match="Unsupported SDF revision"):
-        _binary.dump(header, np.zeros((1, 1)), io.BytesIO())
+    with pytest.raises(SdfVersionError, match="Unsupported SDF revision"):
+        header.revision = "3.0"  # type: ignore[assignment]
 
 
 def test_dump_rejects_malformed_v2_trailer() -> None:

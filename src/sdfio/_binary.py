@@ -166,8 +166,6 @@ def dump(header: Header, data: np.ndarray, fp: IO[bytes], trailer: bytes = b"") 
         metres. ``NaN`` marks non-measured or spurious points.
     :param trailer: Optional raw record 3 trailer content.
     """
-    if header.revision not in _COUNTS_STRUCT:
-        raise SdfFormatError(f"Unsupported SDF revision {header.revision!r}")
     data_type = validate_for_write(header, trailer)
 
     fp.write(f"{BINARY_PREFIX}{header.revision}".encode("ascii"))

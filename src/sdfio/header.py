@@ -177,6 +177,15 @@ def validate_for_write(header: Header, trailer: str | bytes) -> DataTypeInfo:
     return require_supported_data_type(header.data_type, header.revision)
 
 
+def _as_revision(value: str) -> Revision:
+    try:
+        return Revision(value)
+    except ValueError:
+        raise SdfVersionError(
+            f"Unsupported SDF revision {value!r}, expected one of {tuple(Revision)}"
+        ) from None
+
+
 @dataclass
 class Header:
     """SDF record 1 header fields.
@@ -189,7 +198,9 @@ class Header:
     (:attr:`SdfFile.data`), which is written with them.
 
     A header is checked when it is made and when a field is set: the revision, the file format,
-    the data type with the revision, a positive ``z_scale`` and a 7-bit ASCII ``manufacturer_id``.
+    the data type, which the revision must have, a positive ``z_scale`` and a 7-bit ASCII
+    ``manufacturer_id``. To change the revision together with a data type that the old revision
+    does not have, make a new header, see :meth:`SdfFile.with_revision`.
     A header that a reader returns is not, because the readers accept files with such values, so
     that they can be inspected and fixed; the write rejects them.
 
@@ -234,20 +245,6 @@ class Header:
     z_resolution: float = -1.0
     data_type: DataType = DataType.BINARY64
 
-    def __post_init__(self) -> None:
-        """Coerce and validate the SDF revision, the file format and the data type."""
-        try:
-            self.revision = Revision(self.revision)
-        except ValueError:
-            raise SdfVersionError(
-                f"Unsupported SDF revision {self.revision!r}, expected one of {tuple(Revision)}"
-            ) from None
-        if not isinstance(self.format, FileFormat):
-            raise TypeError(f"format must be a FileFormat member, got {self.format!r}")
-        require_supported_data_type(self.data_type, self.revision)
-        validate_z_scale(self.z_scale)
-        validate_manufacturer_id_ascii(self.manufacturer_id)
-
     @classmethod
     def _read(cls, **fields: object) -> Header:
         """Return a header of what a file holds, which the readers accept as it is.
@@ -263,14 +260,23 @@ class Header:
         return header
 
     def __setattr__(self, name: str, value: object) -> None:
-        """Hold the dates as UTC to the minute and the data type as a known one, whenever set."""
-        if name == "data_type":
+        """Check a field when it is set, and hold the dates as UTC to the minute."""
+        if name == "revision":
+            value = _as_revision(value)  # type: ignore[arg-type]
+            if "data_type" in self.__dict__:
+                require_supported_data_type(self.data_type, value)
+        elif name == "format":
+            if not isinstance(value, FileFormat):
+                raise TypeError(f"format must be a FileFormat member, got {value!r}")
+        elif name == "data_type":
             value = get_data_type(value).type  # type: ignore[arg-type]
+            if "revision" in self.__dict__:
+                require_supported_data_type(value, self.revision)
         elif name == "z_scale":
             validate_z_scale(value)  # type: ignore[arg-type]
         elif name == "manufacturer_id":
             validate_manufacturer_id_ascii(value)  # type: ignore[arg-type]
-        if name in ("create_date", "mod_date"):
+        elif name in ("create_date", "mod_date"):
             value = to_sdf_datetime(value)  # type: ignore[arg-type]
         super().__setattr__(name, value)
 
