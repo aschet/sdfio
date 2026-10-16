@@ -539,3 +539,102 @@ def test_loads_detects_upper_case_magic_prefix(file_format: FileFormat) -> None:
     )
     blob = sdf.dumps()
     assert sdfio.SdfFile.loads(blob[:1].upper() + blob[1:]).header.binary is sdf.header.binary
+
+
+def test_from_array_builds_the_file_without_writing_it() -> None:
+    data = np.arange(6, dtype=np.float64).reshape(2, 3) * 1e-6
+    sdf = sdfio.SdfFile.from_array(data, x_scale=1e-6, y_scale=2e-6, z_scale=1e-9, trailer="a = b")
+
+    assert sdf.header.dialect == SdfDialect.ISO_2_0
+    assert sdf.header.binary is True
+    assert (sdf.header.num_profiles, sdf.header.num_points) == (2, 3)
+    assert (sdf.header.x_scale, sdf.header.y_scale, sdf.header.z_scale) == (1e-6, 2e-6, 1e-9)
+    assert sdf.header.data_type == DataType.BINARY64
+    assert sdf.header.create_date is not None
+    assert sdf.header.create_date.tzinfo == UTC
+    np.testing.assert_array_equal(sdf.data, data)
+    assert sdf.trailer == "a = b"
+
+
+def test_from_array_takes_the_template_and_the_format() -> None:
+    created = datetime(2024, 1, 2, 3, 4, tzinfo=UTC)
+    metadata = sdfio.SdfMetadata(
+        dialect=SdfDialect.BCR_1_0,
+        manufacturer_id="acme",
+        create_date=created,
+        mod_date=created,
+        z_resolution=1e-9,
+        data_type=DataType.INT16,
+    )
+    sdf = sdfio.SdfFile.from_array(
+        np.zeros((1, 2)),
+        x_scale=1e-6,
+        y_scale=1e-6,
+        format=FileFormat.ASCII,
+        metadata=metadata,
+    )
+
+    assert sdf.header.dialect == SdfDialect.BCR_1_0
+    assert sdf.header.binary is False
+    assert sdf.header.manufacturer_id == "acme"
+    assert sdf.header.create_date == created
+    assert sdf.header.mod_date == created
+    assert sdf.header.z_resolution == 1e-9
+    assert sdf.header.data_type == DataType.INT16
+
+
+def test_from_array_picks_the_scale_for_auto() -> None:
+    data = np.array([[0.0, 1e-3, np.nan]])
+    metadata = sdfio.SdfMetadata(data_type=DataType.INT16)
+    sdf = sdfio.SdfFile.from_array(
+        data, x_scale=1e-6, y_scale=1e-6, z_scale="auto", metadata=metadata
+    )
+
+    assert sdf.header.z_scale > 0
+    assert sdf.raw_data() is not None  # the data fits the type
+
+
+@pytest.mark.parametrize("format", list(FileFormat))
+def test_write_writes_what_from_array_builds(format: FileFormat) -> None:
+    created = datetime(2024, 1, 2, 3, 4, tzinfo=UTC)
+    metadata = sdfio.SdfMetadata(
+        manufacturer_id="acme", create_date=created, mod_date=created, data_type=DataType.INT32
+    )
+    data = np.array([[1e-6, np.nan], [2e-6, 3e-6]])
+    built = sdfio.SdfFile.from_array(
+        data, x_scale=1e-6, y_scale=1e-6, z_scale=1e-9, format=format, metadata=metadata
+    )
+    buffer = io.BytesIO()
+    sdfio.write(
+        buffer, data, x_scale=1e-6, y_scale=1e-6, z_scale=1e-9, format=format, metadata=metadata
+    )
+
+    assert buffer.getvalue() == built.dumps(format=format)
+    assert sdfio.read(io.BytesIO(buffer.getvalue())) == sdfio.SdfFile.loads(built.dumps())
+
+
+def test_from_array_rejects_data_that_is_not_two_dimensional() -> None:
+    with pytest.raises(SdfFormatError, match="2-D"):
+        sdfio.SdfFile.from_array(np.zeros(3), x_scale=1e-6, y_scale=1e-6)
+
+
+def test_from_array_rejects_an_unknown_data_type_code() -> None:
+    with pytest.raises(SdfFormatError, match="Unknown SDF data type"):
+        sdfio.SdfFile.from_array(
+            np.zeros((1, 2)),
+            x_scale=1e-6,
+            y_scale=1e-6,
+            metadata=sdfio.SdfMetadata(data_type=99),
+        )
+
+
+def test_from_array_leaves_the_checks_of_the_data_to_the_write() -> None:
+    sdf = sdfio.SdfFile.from_array(
+        np.zeros((1, 2)),
+        x_scale=1e-6,
+        y_scale=1e-6,
+        metadata=sdfio.SdfMetadata(dialect=SdfDialect.ISO_1_0, data_type=DataType.BINARY32),
+    )
+
+    with pytest.raises(SdfFormatError, match="not valid for SDF dialect"):
+        sdf.dumps()

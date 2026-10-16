@@ -295,6 +295,83 @@ class SdfFile:
         self.trailer = format_tagged_fields(fields)
 
     @classmethod
+    def from_array(
+        cls,
+        data: np.ndarray,
+        *,
+        x_scale: float,
+        y_scale: float,
+        z_scale: float | Literal["auto"] = 1e-6,
+        format: FileFormat = FileFormat.BINARY,
+        metadata: SdfMetadata | None = None,
+        trailer: str | bytes = "",
+    ) -> SdfFile:
+        """Build an in-memory SDF file from a NumPy array, without writing it.
+
+        The arguments are those of :func:`sdfio.write`, which builds the file this way and
+        saves it. Only the shape of ``data`` and the data type code are checked here. Everything
+        else, such as whether ``data`` fits the data type, whether the data type exists in the
+        dialect, the ``z_scale``, the manufacturer ID and the trailer, is checked when the file is
+        written, see :meth:`save` and :meth:`dumps`.
+
+        :param data: ``(num_profiles, num_points)`` array of height values in
+            metres. ``NaN`` marks non-measured or spurious points. An array that already holds
+            ``float64`` values is used as it is, not copied.
+        :param x_scale: Sampling interval along x, in metres.
+        :param y_scale: Sampling interval along y, in metres.
+        :param z_scale: Scale factor applied to the coded height values, or
+            ``"auto"`` to pick the smallest (highest-resolution) scale that
+            fits ``data`` into ``metadata.data_type`` without overflow (see
+            :func:`sdfio.datatypes.suggest_z_scale`).
+        :param format: :attr:`FileFormat.ASCII` or :attr:`FileFormat.BINARY`, which is what
+            :attr:`SdfHeader.binary` is set from.
+        :param metadata: Reusable header template (``dialect``,
+            ``manufacturer_id``, ``create_date``, ``mod_date``, ``z_resolution``,
+            ``data_type``); defaults to :class:`SdfMetadata`'s own defaults
+            (ISO-2.0, ``binary64``, the current time). Every field on it is used as given --
+            there is no overlap with ``x_scale``/``y_scale``/``z_scale``/``format`` above, or
+            with ``num_points``/``num_profiles``, which are always taken from ``data``'s shape.
+            Pass a shared template to build several files with the same metadata, e.g.
+            ``metadata=SdfMetadata(manufacturer_id="acme")``. ``manufacturer_id`` must be 7-bit
+            ASCII; values longer than 10 bytes are silently truncated. The dates are held as UTC
+            to the minute, see :class:`SdfHeader`.
+        :param trailer: Optional record 3 trailer content.
+        :raises SdfFormatError: If ``data`` is not 2-D or ``metadata.data_type`` is not a known
+            data type code.
+
+        >>> import numpy as np
+        >>> sdf = SdfFile.from_array(np.zeros((2, 3)), x_scale=1e-6, y_scale=1e-6)
+        >>> sdf.data.shape, sdf.header.dialect.value, sdf.header.binary
+        ((2, 3), 'ISO-2.0', True)
+        """
+        array = np.asarray(data, dtype=np.float64)
+        if array.ndim != 2:
+            raise SdfFormatError("SDF data must be a 2-D (num_profiles, num_points) array")
+        meta = metadata if metadata is not None else SdfMetadata()
+        resolved_data_type = get_data_type(meta.data_type)
+        resolved_z_scale = (
+            suggest_z_scale(array, resolved_data_type, meta.dialect)
+            if z_scale == "auto"
+            else z_scale
+        )
+        now = datetime.now(UTC)
+        header = SdfHeader(
+            dialect=meta.dialect,
+            binary=format == FileFormat.BINARY,
+            manufacturer_id=meta.manufacturer_id,
+            create_date=meta.create_date or now,
+            mod_date=meta.mod_date or now,
+            num_points=array.shape[1],
+            num_profiles=array.shape[0],
+            x_scale=x_scale,
+            y_scale=y_scale,
+            z_scale=resolved_z_scale,
+            z_resolution=meta.z_resolution,
+            data_type=resolved_data_type.type,
+        )
+        return cls(header=header, data=array, trailer=trailer)
+
+    @classmethod
     def loads(cls, data: bytes) -> SdfFile:
         """Parse an in-memory SDF blob, detecting the ASCII/binary format from its magic.
 
@@ -409,6 +486,9 @@ def write(
 ) -> None:
     """Write a NumPy array to an SDF surface data file.
 
+    The file is built by :meth:`SdfFile.from_array`, which takes the same arguments and returns
+    it without writing, and saved with :meth:`SdfFile.save`.
+
     :param path: Destination path, or an open binary file object.
     :param data: ``(num_profiles, num_points)`` array of height values in
         metres. ``NaN`` marks non-measured or spurious points.
@@ -434,8 +514,7 @@ def write(
     :raises SdfFormatError: If ``data`` is not 2-D, ``z_scale`` is not
         positive, ``metadata.manufacturer_id`` isn't 7-bit ASCII,
         ``metadata.data_type`` is invalid or unsupported for
-        ``metadata.dialect``, ``metadata``'s timestamps aren't UTC-aware for
-        a dialect that requires it, ``trailer`` isn't 7-bit ASCII, a
+        ``metadata.dialect``, ``trailer`` isn't 7-bit ASCII, a
         non-empty ``trailer`` isn't in the tagged "Name = Value" format for a
         dialect that requires it, or ``data`` does not fit
         ``metadata.data_type`` without overflow.
@@ -451,27 +530,12 @@ def write(
         >>> sdf.data.shape
         (2, 3)
     """
-    array = np.asarray(data, dtype=np.float64)
-    if array.ndim != 2:
-        raise SdfFormatError("SDF data must be a 2-D (num_profiles, num_points) array")
-    meta = metadata if metadata is not None else SdfMetadata()
-    resolved_data_type = get_data_type(meta.data_type)
-    resolved_z_scale = (
-        suggest_z_scale(array, resolved_data_type, meta.dialect) if z_scale == "auto" else z_scale
-    )
-    now = datetime.now(UTC)
-    header = SdfHeader(
-        dialect=meta.dialect,
-        binary=format == FileFormat.BINARY,
-        manufacturer_id=meta.manufacturer_id,
-        create_date=meta.create_date or now,
-        mod_date=meta.mod_date or now,
-        num_points=array.shape[1],
-        num_profiles=array.shape[0],
+    SdfFile.from_array(
+        data,
         x_scale=x_scale,
         y_scale=y_scale,
-        z_scale=resolved_z_scale,
-        z_resolution=meta.z_resolution,
-        data_type=resolved_data_type.type,
-    )
-    SdfFile(header=header, data=array, trailer=trailer).save(path, format=format)
+        z_scale=z_scale,
+        format=format,
+        metadata=metadata,
+        trailer=trailer,
+    ).save(path, format=format)

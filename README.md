@@ -51,6 +51,9 @@ the coordinates, also in metres).
 `sdf.points(drop_invalid=True)` leaves out the points that are not measured and
 returns the `(N, 3)` array of points that point cloud libraries take.
 
+`sdfio.SdfFile.from_array` takes the arguments of `sdfio.write` and returns the file in memory
+without writing it, to change it first or to `save()` it later.
+
 Non-measured or spurious points (the `BAD` marker in ASCII files, or the
 data type's reserved sentinel value in binary files) are represented as
 `NaN` in `sdf.data`, and `sdfio.write` writes `NaN` values back the same way.
