@@ -128,7 +128,7 @@ def _print_info(path: str) -> None:
         ("Yscale", f"{header.y_scale:g}"),
         ("Zscale", f"{header.z_scale:g}"),
         ("Zresolution", f"{header.z_resolution:g}"),
-        ("DataType", sdf.data_type.name.lower()),
+        ("DataType", header.data_type.name.lower()),
     )
     width = max(len(name) for name, _ in fields)
     for name, value in fields:

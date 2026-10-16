@@ -85,7 +85,7 @@ def test_a_sample_is_what_the_generator_makes(case: tuple[Revision, str, str]) -
     assert sample.header == made.header
     assert sample.trailer == made.trailer
     assert np.array_equal(np.isnan(sample.data), np.isnan(made.data))
-    step = sample.header.z_scale if sample.data_type not in FLOAT_TYPES else 0.0
+    step = sample.header.z_scale if sample.header.data_type not in FLOAT_TYPES else 0.0
     np.testing.assert_allclose(
         sample.data, made.data, rtol=1e-9, atol=max(step * (1 + 1e-9), 1e-15), equal_nan=True
     )
@@ -100,7 +100,7 @@ def test_a_sample_reads_as_it_was_meant(case: tuple[Revision, str, str]) -> None
 
     assert sdf.header.revision is revision
     assert sdf.header.format is (FileFormat.BINARY if suffix == "binary" else FileFormat.ASCII)
-    assert sdf.data_type is expected.data_type
+    assert sdf.header.data_type is expected.data_type
     assert sdf.data.shape == expected.data.shape
     assert (sdf.header.x_scale, sdf.header.y_scale) == (generate.X_SCALE, generate.Y_SCALE)
     assert sdf.header.z_scale == generate.Z_SCALES[expected.data_type]
@@ -142,7 +142,7 @@ def test_the_ascii_and_the_binary_file_hold_the_same_data(revision: Revision, na
     assert ascii_file.header.data_type == binary_file.header.data_type
     assert np.array_equal(np.isnan(ascii_file.data), np.isnan(binary_file.data))
     # The text of a binary32 has 7 digits, the text of a binary64 has 15.
-    rtol = 1e-6 if ascii_file.data_type is DataType.BINARY32 else 1e-9
+    rtol = 1e-6 if ascii_file.header.data_type is DataType.BINARY32 else 1e-9
     np.testing.assert_allclose(
         ascii_file.data, binary_file.data, rtol=rtol, atol=1e-15, equal_nan=True
     )

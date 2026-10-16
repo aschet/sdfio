@@ -148,19 +148,6 @@ class SdfFile:
         """
         return bool(self.data.shape[0] == 1)
 
-    @property
-    def data_type(self) -> DataType:
-        """The data area storage type (see :mod:`sdfio.datatypes`).
-
-        A convenience for ``header.data_type``, which stores the same value
-        as a plain ``int`` (the raw on-disk ``DataType`` code).
-        """
-        return get_data_type(self.header.data_type).type
-
-    @data_type.setter
-    def data_type(self, value: DataType | int) -> None:
-        self.header.data_type = get_data_type(value).type
-
     def with_revision(
         self,
         revision: Revision,
@@ -216,7 +203,7 @@ class SdfFile:
         file's current revision back in unchanged::
 
             >>> retyped = sdf.with_revision(sdf.header.revision, data_type=sdfio.DataType.INT16)
-            >>> retyped.data_type.name
+            >>> retyped.header.data_type.name
             'INT16'
 
         Heights that do not fit the new data type at the old ``z_scale`` are

@@ -300,7 +300,7 @@ def test_changing_data_type_after_read_reencodes_on_save() -> None:
         data=data,
     )
 
-    sdf.data_type = DataType.BINARY64
+    sdf.header.data_type = DataType.BINARY64
     reloaded = sdfio.SdfFile.loads(sdf.dumps())
 
     assert reloaded.header.data_type == DataType.BINARY64
@@ -308,15 +308,14 @@ def test_changing_data_type_after_read_reencodes_on_save() -> None:
 
 
 def test_data_type_roundtrips_and_rejects_unknown_code() -> None:
-    sdf = sdfio.SdfFile(header=sdfio.Header(), data=np.zeros((1, 1)))
-    assert sdf.data_type == DataType.BINARY64
+    header = sdfio.Header()
+    assert header.data_type == DataType.BINARY64
 
-    sdf.data_type = DataType.BINARY32
-    assert sdf.data_type == DataType.BINARY32
-    assert sdf.header.data_type == DataType.BINARY32
+    header.data_type = DataType.BINARY32
+    assert header.data_type == DataType.BINARY32
 
     with pytest.raises(SdfFormatError, match="Unknown SDF data type code"):
-        sdf.data_type = 99
+        header.data_type = 99  # type: ignore[assignment]
 
 
 def test_changing_data_type_incompatible_with_revision_raises() -> None:
@@ -324,7 +323,7 @@ def test_changing_data_type_incompatible_with_revision_raises() -> None:
         header=sdfio.Header(revision=Revision.ISO_1_0, data_type=DataType.INT16),
         data=np.array([[1.0]]),
     )
-    sdf.data_type = DataType.BINARY32  # ISO-2.0/BCR-1.0 only
+    sdf.header.data_type = DataType.BINARY32  # ISO-2.0/BCR-1.0 only
     with pytest.raises(SdfFormatError, match="not valid for SDF revision"):
         sdf.dumps()
 

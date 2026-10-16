@@ -10,7 +10,9 @@ SAMPLES = Path(__file__).resolve().parent.parent / "tests" / "samples" / "iso251
 path = SAMPLES / "iso2_surface_binary.sdf"
 
 sdf = sdfio.read(path)
-print(sdf.header.revision, sdf.header.format.name.lower(), sdf.data_type.name, sdf.data.shape)
+print(
+    sdf.header.revision, sdf.header.format.name.lower(), sdf.header.data_type.name, sdf.data.shape
+)
 
 # Heights and axes are in metres; points that were not measured are NaN.
 print("x runs to", sdf.x_axis[-1], "m, y to", sdf.y_axis[-1], "m")

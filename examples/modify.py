@@ -28,7 +28,7 @@ print("crop:", part.data.shape, "coarse:", coarse.data.shape, "row is a profile:
 older = coarse.with_revision(
     sdfio.Revision.ISO_1_0, data_type=sdfio.DataType.INT32, refit_z_scale=True
 )
-print("converted to", older.header.revision, older.data_type.name)
+print("converted to", older.header.revision, older.header.data_type.name)
 
 for file_format in sdfio.FileFormat:
     buffer = io.BytesIO()
