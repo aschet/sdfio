@@ -14,8 +14,7 @@ import pytest
 import sdfio
 from sdfio.datatypes import DataType, get_data_type, suggest_z_scale
 from sdfio.exceptions import SdfFormatError
-from sdfio.file import FileFormat
-from sdfio.revision import Revision
+from sdfio.revision import FileFormat, Revision
 
 
 def _sample_data() -> np.ndarray:

@@ -11,8 +11,7 @@ import io
 import numpy as np
 
 import sdfio
-from sdfio.file import FileFormat
-from sdfio.revision import Revision
+from sdfio.revision import FileFormat, Revision
 
 
 def _sample_data() -> np.ndarray:

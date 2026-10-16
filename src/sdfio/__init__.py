@@ -98,29 +98,19 @@ A file is converted to another revision, data type or representation with
 
 from __future__ import annotations
 
-from .datatypes import (
-    DATA_TYPES,
-    DataType,
-    DataTypeInfo,
-    decode_raw,
-    encode_raw,
-    get_data_type,
-    suggest_z_scale,
-)
+from .datatypes import DataType, DataTypeInfo, get_data_type, suggest_z_scale
 from .exceptions import SdfError, SdfFormatError, SdfVersionError
-from .file import FileFormat, SdfFile, read, write
+from .file import SdfFile, read, write
 from .header import Header, Metadata
-from .revision import MAGICS, Revision
+from .revision import MAGICS, FileFormat, Revision, RevisionRules
 from .trailer import (
     format_tagged_fields,
     parse_tagged_fields,
     sanitize_tagged_fields,
-    validate_trailer_ascii,
     validate_trailer_tagged,
 )
 
 __all__ = [
-    "DATA_TYPES",
     "MAGICS",
     "DataType",
     "DataTypeInfo",
@@ -128,20 +118,18 @@ __all__ = [
     "Header",
     "Metadata",
     "Revision",
+    "RevisionRules",
     "SdfError",
     "SdfFile",
     "SdfFormatError",
     "SdfVersionError",
     "__version__",
-    "decode_raw",
-    "encode_raw",
     "format_tagged_fields",
     "get_data_type",
     "parse_tagged_fields",
     "read",
     "sanitize_tagged_fields",
     "suggest_z_scale",
-    "validate_trailer_ascii",
     "validate_trailer_tagged",
     "write",
 ]
