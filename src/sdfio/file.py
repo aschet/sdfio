@@ -175,7 +175,7 @@ class SdfFile:
             >>> buf = io.BytesIO()
             >>> sdfio.write(buf, np.zeros((2, 3)), x_scale=1e-6, y_scale=1e-6,
             ...              metadata=sdfio.Metadata(revision=sdfio.Revision.ISO_1_0))
-            >>> sdf = sdfio.SdfFile.open(io.BytesIO(buf.getvalue()))
+            >>> sdf = sdfio.read(io.BytesIO(buf.getvalue()))
             >>> converted = sdf.with_revision(sdfio.Revision.ISO_2_0)
             >>> str(converted.header.revision)
             'ISO-2.0'
@@ -353,17 +353,6 @@ class SdfFile:
         header, values, trailer = _io.decode(data)
         return cls(header=header, data=values, trailer=trailer)
 
-    @classmethod
-    def open(cls, path: PathOrStream) -> SdfFile:
-        """Read an SDF file, detecting the ASCII/binary format from its magic.
-
-        :param path: Path to a ``.sdf`` file, or an open binary file object,
-            in either format.
-        :raises SdfFormatError: If the file does not start with a recognized
-            SDF magic, or its contents are otherwise malformed.
-        """
-        return cls.loads(_io.read_bytes(path))
-
     def dumps(self, *, format: FileFormat | None = None) -> bytes:
         """Serialize this file to an in-memory blob, overriding the ASCII/binary format if given.
 
@@ -372,9 +361,7 @@ class SdfFile:
         :returns: The serialized ``.sdf`` file contents, always as ``bytes``
             (the ASCII format is 7-bit ASCII text, so it is returned
             encoded rather than as ``str``).
-        :raises SdfFormatError: If ``data``'s shape does not match
-            ``header``, ``trailer`` isn't 7-bit ASCII, or any other header
-            field is invalid (see :func:`write`).
+        :raises SdfFormatError: If the file can't be written, see :func:`write`.
         :raises TypeError: If ``format`` is given and is not a
             :class:`FileFormat` member.
         """
@@ -411,7 +398,7 @@ def read(path: PathOrStream) -> SdfFile:
     :raises SdfFormatError: If the file does not start with a recognized
         SDF magic, or its contents are otherwise malformed.
     """
-    return SdfFile.open(path)
+    return SdfFile.loads(_io.read_bytes(path))
 
 
 def write(

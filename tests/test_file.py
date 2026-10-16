@@ -497,7 +497,7 @@ def test_sdffile_open_save_via_binary_stream() -> None:
     buffer = io.BytesIO()
     sdf.save(buffer)
     buffer.seek(0)
-    reloaded = sdfio.SdfFile.open(buffer)
+    reloaded = sdfio.read(buffer)
 
     np.testing.assert_allclose(reloaded.data, data, rtol=1e-9, equal_nan=True)
 
