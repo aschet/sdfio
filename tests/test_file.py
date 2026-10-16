@@ -138,6 +138,16 @@ def test_loads_reads_data_despite_corrupt_trailer(binary: bool) -> None:
     np.testing.assert_array_equal(reloaded.data, np.zeros((2, 2)))
 
 
+def test_is_profile_follows_the_number_of_rows_of_a_file_that_is_read() -> None:
+    buffer = io.BytesIO()
+    sdfio.write(buffer, np.zeros((1, 4)), x_scale=1e-6, y_scale=1e-6)
+    assert sdfio.read(io.BytesIO(buffer.getvalue())).is_profile is True
+
+    buffer = io.BytesIO()
+    sdfio.write(buffer, np.zeros((3, 4)), x_scale=1e-6, y_scale=1e-6)
+    assert sdfio.read(io.BytesIO(buffer.getvalue())).is_profile is False
+
+
 def test_trailer_fields_roundtrip() -> None:
     sdf = sdfio.SdfFile(header=sdfio.SdfHeader(num_points=1, num_profiles=1), data=np.zeros((1, 1)))
 

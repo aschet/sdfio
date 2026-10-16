@@ -103,6 +103,14 @@ def test_header_shape() -> None:
     assert header.shape == (3, 5)
 
 
+@pytest.mark.parametrize(
+    ("num_profiles", "expected"), [(0, False), (1, True), (2, False), (480, False)]
+)
+def test_header_is_profile_when_it_has_one_row(num_profiles: int, expected: bool) -> None:
+    # The standard defines a profile by NumProfiles being 1.
+    assert SdfHeader(num_points=5, num_profiles=num_profiles).is_profile is expected
+
+
 def test_header_defaults_are_valid_iso_dialect() -> None:
     header = SdfHeader()
     assert header.dialect == SdfDialect.ISO_2_0

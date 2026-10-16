@@ -19,7 +19,7 @@ buffer = io.BytesIO()
 sdfio.write(buffer, profile.reshape(1, -1), x_scale=2e-6, y_scale=2e-6)
 
 sdf = sdfio.read(io.BytesIO(buffer.getvalue()))
-print("rows and columns:", sdf.data.shape)
+print("rows and columns:", sdf.data.shape, "a profile:", sdf.is_profile)
 print("x runs to", sdf.x_axis[-1] * 1e3, "mm, y is", sdf.y_axis.tolist())
 
 # The points of a profile have one row, with y equal to 0.

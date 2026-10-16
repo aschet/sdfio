@@ -100,7 +100,7 @@ class SdfFile:
         See :attr:`x_axis` for why ``num_profiles`` (not ``num_points``) is
         the correct length here.
 
-        For a profile (``num_profiles == 1``), the standard calls ``y_scale``
+        For a profile (:attr:`is_profile`), the standard calls ``y_scale``
         meaningless; this returns ``[0.0]`` regardless of its value.
         """
         return np.arange(self.header.num_profiles) * self.header.y_scale
@@ -145,6 +145,22 @@ class SdfFile:
             return grid
         flat = grid.reshape(-1, 3)
         return flat[np.isfinite(flat[:, 2])]
+
+    @property
+    def is_profile(self) -> bool:
+        """Whether the file holds a profile and not an areal surface.
+
+        A convenience for ``header.is_profile``: the standard defines a profile as ``num_profiles``
+        being 1.
+
+        >>> import numpy as np
+        >>> from sdfio import SdfFile, SdfHeader
+        >>> profile = SdfFile(header=SdfHeader(num_points=3, num_profiles=1), data=np.zeros((1, 3)))
+        >>> surface = SdfFile(header=SdfHeader(num_points=3, num_profiles=2), data=np.zeros((2, 3)))
+        >>> profile.is_profile, surface.is_profile
+        (True, False)
+        """
+        return self.header.is_profile
 
     @property
     def data_type(self) -> DataType:

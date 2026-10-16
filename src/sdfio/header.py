@@ -484,6 +484,16 @@ class SdfHeader:
         return (self.num_profiles, self.num_points)
 
     @property
+    def is_profile(self) -> bool:
+        """Whether the file holds a profile and not an areal surface: ``num_profiles`` is 1.
+
+        The standard defines a profile this way ("in case of a profile, the value of 'Number of
+        rows in the data matrix' is 1") and calls ``y_scale`` meaningless for it. A surface with
+        a single row is therefore a profile.
+        """
+        return self.num_profiles == 1
+
+    @property
     def magic(self) -> str:
         """8-character file magic (dialect and version) written at the start of the file."""
         prefix = BINARY_PREFIX if self.binary else ASCII_PREFIX
