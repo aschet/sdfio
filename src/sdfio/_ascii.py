@@ -18,6 +18,7 @@ from .exceptions import SdfFormatError
 from .header import (
     ASCII_PREFIX,
     BINARY_PREFIX,
+    FileFormat,
     SdfDialect,
     SdfHeader,
     format_sdf_datetime,
@@ -187,7 +188,7 @@ def loads(text: str) -> tuple[SdfHeader, np.ndarray, str]:
 
     header = SdfHeader(
         dialect=dialect,
-        binary=False,
+        format=FileFormat.ASCII,
         manufacturer_id=_field(fields, "ManufacID").strip(),
         create_date=parse_sdf_datetime(_field(fields, "CreateDate"), dialect),
         mod_date=parse_sdf_datetime(_field(fields, "ModDate"), dialect),
@@ -264,7 +265,7 @@ def _format_value(value: float, data_type: SdfDataType, dialect: SdfDialect) -> 
 def dumps(header: SdfHeader, data: np.ndarray, trailer: str = "") -> str:
     """Serialize a header/data pair to the ASCII SDF text representation.
 
-    :param header: Header describing ``data``; ``header.binary`` is ignored.
+    :param header: Header describing ``data``; ``header.format`` is ignored.
     :param data: ``(num_profiles, num_points)`` array of height values in
         metres. ``NaN`` marks non-measured or spurious points.
     :param trailer: Optional record 3 trailer content.

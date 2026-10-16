@@ -13,6 +13,7 @@ import numpy as np
 import pytest
 
 import sdfio
+from sdfio import FileFormat
 from sdfio.cli import main
 
 
@@ -110,7 +111,7 @@ def test_cli_convert(tmp_path: Path) -> None:
     assert main(["convert", str(source), str(destination), "--format", "ascii"]) == 0
 
     converted = sdfio.read(destination)
-    assert converted.header.binary is False
+    assert converted.header.format is FileFormat.ASCII
     np.testing.assert_allclose(converted.data, np.ones((2, 2)), rtol=1e-9)
 
 
@@ -150,7 +151,7 @@ def test_cli_convert_without_format_keeps_source_format(tmp_path: Path) -> None:
     assert main(["convert", str(source), str(destination), "--type", "binary64"]) == 0
 
     converted = sdfio.read(destination)
-    assert converted.header.binary is False
+    assert converted.header.format is FileFormat.ASCII
 
 
 def test_cli_convert_changes_dialect(tmp_path: Path) -> None:

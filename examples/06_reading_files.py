@@ -25,7 +25,7 @@ for path in paths:
     kind = "profile" if sdf.header.num_profiles == 1 else "surface"
     print(
         f"{path.name}: {kind}, {sdf.header.dialect}, "
-        f"{'binary' if sdf.header.binary else 'ASCII'}, {sdf.data_type.name}, {sdf.data.shape}"
+        f"{sdf.header.format.name.lower()}, {sdf.data_type.name}, {sdf.data.shape}"
     )
 
 with open(paths[1], "rb") as stream:

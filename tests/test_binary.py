@@ -16,13 +16,13 @@ from sdfio import _binary
 from sdfio.datatypes import DataType
 from sdfio.exceptions import SdfFormatError
 from sdfio.file import SdfFile
-from sdfio.header import MAGIC_SIZE, SdfDialect, SdfHeader
+from sdfio.header import MAGIC_SIZE, FileFormat, SdfDialect, SdfHeader
 
 
 def _make_header(**overrides: Any) -> SdfHeader:
     defaults: dict[str, Any] = {
         "dialect": SdfDialect.ISO_2_0,
-        "binary": True,
+        "format": FileFormat.BINARY,
         "manufacturer_id": "sdfio",
         "num_points": 3,
         "num_profiles": 2,
@@ -352,10 +352,10 @@ def test_binary_files_of_the_older_dialects_hold_at_most_the_max_count(
     limit = dialect.max_binary_count
     data_type = DataType.INT16
 
-    def write(points: int, binary: bool) -> bytes:
+    def write(points: int, format: FileFormat) -> bytes:
         header = SdfHeader(
             dialect=dialect,
-            binary=binary,
+            format=format,
             num_points=points,
             num_profiles=1,
             z_scale=1e-9,
@@ -363,10 +363,13 @@ def test_binary_files_of_the_older_dialects_hold_at_most_the_max_count(
         )
         return SdfFile(header=header, data=np.zeros((1, points))).dumps()
 
-    assert sdfio.SdfFile.loads(write(limit, binary=True)).header.num_points == limit
+    assert sdfio.SdfFile.loads(write(limit, format=FileFormat.BINARY)).header.num_points == limit
     with pytest.raises(SdfFormatError, match=str(limit)):
-        write(limit + 1, binary=True)
-    assert sdfio.SdfFile.loads(write(limit + 1, binary=False)).header.num_points == limit + 1
+        write(limit + 1, format=FileFormat.BINARY)
+    assert (
+        sdfio.SdfFile.loads(write(limit + 1, format=FileFormat.ASCII)).header.num_points
+        == limit + 1
+    )
 
 
 def _binary_file(dialect: SdfDialect) -> bytes:

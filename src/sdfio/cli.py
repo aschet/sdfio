@@ -14,8 +14,9 @@ from datetime import datetime
 from . import __version__
 from .datatypes import DataType
 from .exceptions import SdfError, SdfFormatError
-from .file import FileFormat, read
+from .file import read
 from .header import (
+    FileFormat,
     SdfDialect,
     format_tagged_fields,
     parse_tagged_fields,
@@ -117,7 +118,7 @@ def _print_info(path: str) -> None:
     sdf = read(path)
     header = sdf.header
     fields = (
-        ("Format", "binary" if header.binary else "ASCII"),
+        ("Format", "binary" if header.format is FileFormat.BINARY else "ASCII"),
         ("Dialect", header.dialect),
         ("ManufacID", header.manufacturer_id),
         ("CreateDate", _local_time(header.create_date)),

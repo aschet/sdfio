@@ -56,7 +56,7 @@ def test_write_read_roundtrip(file_format: FileFormat, dialect: SdfDialect) -> N
     sdf = sdfio.read(buffer)
 
     assert sdf.header.dialect == dialect
-    assert sdf.header.binary == (file_format == FileFormat.BINARY)
+    assert sdf.header.format is file_format
     assert sdf.header.num_points == 3
     assert sdf.header.num_profiles == 2
     np.testing.assert_allclose(sdf.data, data, rtol=1e-9, equal_nan=True)
@@ -82,7 +82,7 @@ def test_write_defaults_to_binary_iso_2_0() -> None:
     sdfio.write(buffer, np.zeros((1, 1)), x_scale=1e-6, y_scale=1e-6)
     buffer.seek(0)
     sdf = sdfio.read(buffer)
-    assert sdf.header.binary is True
+    assert sdf.header.format is FileFormat.BINARY
     assert sdf.header.dialect == SdfDialect.ISO_2_0
 
 
@@ -92,9 +92,7 @@ def test_trailer_roundtrip(file_format: FileFormat, dialect: SdfDialect) -> None
     # Neither dialect imposes a format requirement on the trailer's content,
     # so arbitrary ASCII text round-trips as-is.
     sdf = sdfio.SdfFile(
-        header=sdfio.SdfHeader(
-            dialect=dialect, binary=file_format == FileFormat.BINARY, num_points=1, num_profiles=1
-        ),
+        header=sdfio.SdfHeader(dialect=dialect, format=file_format, num_points=1, num_profiles=1),
         data=np.zeros((1, 1)),
         trailer="OperatorName = Jane Doe",
     )
@@ -113,7 +111,9 @@ def test_trailer_roundtrip(file_format: FileFormat, dialect: SdfDialect) -> None
 def test_dumps_rejects_non_ascii_trailer(binary: bool) -> None:
     """Record 3 (the trailer) is defined as a sequence of ASCII values, for both formats."""
     sdf = sdfio.SdfFile(
-        header=sdfio.SdfHeader(binary=binary, num_points=1, num_profiles=1),
+        header=sdfio.SdfHeader(
+            format=FileFormat.BINARY if binary else FileFormat.ASCII, num_points=1, num_profiles=1
+        ),
         data=np.zeros((1, 1)),
         trailer="Operator = Müller café",
     )
@@ -126,7 +126,9 @@ def test_dumps_rejects_non_ascii_trailer(binary: bool) -> None:
 def test_loads_reads_data_despite_corrupt_trailer(binary: bool) -> None:
     """A corrupt trailer must not prevent reading the (already-decoded) depth data."""
     sdf = sdfio.SdfFile(
-        header=sdfio.SdfHeader(binary=binary, num_points=2, num_profiles=2),
+        header=sdfio.SdfHeader(
+            format=FileFormat.BINARY if binary else FileFormat.ASCII, num_points=2, num_profiles=2
+        ),
         data=np.zeros((2, 2)),
         trailer=b"Operator = X" if binary else "Operator = X",
     )
@@ -219,7 +221,7 @@ def test_write_read_roundtrip_all_data_types(file_format: FileFormat, data_type:
     data = np.array([[1.0, np.nan, -2.0], [0.0, 3.0, 4.0]])
     sdf = sdfio.SdfFile(
         header=sdfio.SdfHeader(
-            binary=file_format == FileFormat.BINARY,
+            format=file_format,
             num_points=3,
             num_profiles=2,
             x_scale=1e-6,
@@ -246,7 +248,7 @@ def test_write_read_roundtrip_bcr_unsigned_data_types(
     sdf = sdfio.SdfFile(
         header=sdfio.SdfHeader(
             dialect=SdfDialect.BCR_1_0,
-            binary=file_format == FileFormat.BINARY,
+            format=file_format,
             num_points=3,
             num_profiles=2,
             x_scale=1e-6,
@@ -436,14 +438,14 @@ def test_save_can_convert_format() -> None:
     data = _sample_data()
     sdf = sdfio.SdfFile(
         header=sdfio.SdfHeader(
-            binary=True, num_points=3, num_profiles=2, x_scale=1e-6, y_scale=1e-6
+            format=FileFormat.BINARY, num_points=3, num_profiles=2, x_scale=1e-6, y_scale=1e-6
         ),
         data=data,
     )
 
     converted = sdfio.SdfFile.loads(sdf.dumps(format=FileFormat.ASCII))
 
-    assert converted.header.binary is False
+    assert converted.header.format is FileFormat.ASCII
     np.testing.assert_allclose(converted.data, data, rtol=1e-9, equal_nan=True)
 
 
@@ -474,7 +476,7 @@ def test_sdffile_loads_dumps_roundtrip(file_format: FileFormat) -> None:
     data = _sample_data()
     header = sdfio.SdfHeader(
         dialect=SdfDialect.ISO_2_0,
-        binary=file_format == FileFormat.BINARY,
+        format=file_format,
         num_points=3,
         num_profiles=2,
         x_scale=1e-6,
@@ -488,7 +490,7 @@ def test_sdffile_loads_dumps_roundtrip(file_format: FileFormat) -> None:
     assert isinstance(blob, bytes)
 
     round_tripped = sdfio.SdfFile.loads(blob)
-    assert round_tripped.header.binary == (file_format == FileFormat.BINARY)
+    assert round_tripped.header.format is file_format
     np.testing.assert_allclose(round_tripped.data, data, rtol=1e-9, equal_nan=True)
 
 
@@ -530,7 +532,7 @@ def test_loads_detects_upper_case_magic_prefix(file_format: FileFormat) -> None:
     sdf = sdfio.SdfFile(
         header=sdfio.SdfHeader(
             dialect=SdfDialect.BCR_1_0,
-            binary=file_format == FileFormat.BINARY,
+            format=file_format,
             num_points=1,
             num_profiles=1,
             data_type=DataType.BINARY64,
@@ -538,7 +540,7 @@ def test_loads_detects_upper_case_magic_prefix(file_format: FileFormat) -> None:
         data=np.zeros((1, 1)),
     )
     blob = sdf.dumps()
-    assert sdfio.SdfFile.loads(blob[:1].upper() + blob[1:]).header.binary is sdf.header.binary
+    assert sdfio.SdfFile.loads(blob[:1].upper() + blob[1:]).header.format is sdf.header.format
 
 
 def test_from_array_builds_the_file_without_writing_it() -> None:
@@ -546,7 +548,7 @@ def test_from_array_builds_the_file_without_writing_it() -> None:
     sdf = sdfio.SdfFile.from_array(data, x_scale=1e-6, y_scale=2e-6, z_scale=1e-9, trailer="a = b")
 
     assert sdf.header.dialect == SdfDialect.ISO_2_0
-    assert sdf.header.binary is True
+    assert sdf.header.format is FileFormat.BINARY
     assert (sdf.header.num_profiles, sdf.header.num_points) == (2, 3)
     assert (sdf.header.x_scale, sdf.header.y_scale, sdf.header.z_scale) == (1e-6, 2e-6, 1e-9)
     assert sdf.header.data_type == DataType.BINARY64
@@ -575,7 +577,7 @@ def test_from_array_takes_the_template_and_the_format() -> None:
     )
 
     assert sdf.header.dialect == SdfDialect.BCR_1_0
-    assert sdf.header.binary is False
+    assert sdf.header.format is FileFormat.ASCII
     assert sdf.header.manufacturer_id == "acme"
     assert sdf.header.create_date == created
     assert sdf.header.mod_date == created

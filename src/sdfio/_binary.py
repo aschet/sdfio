@@ -18,6 +18,7 @@ from .header import (
     ASCII_PREFIX,
     BINARY_PREFIX,
     MAGIC_SIZE,
+    FileFormat,
     SdfDialect,
     SdfHeader,
     format_sdf_datetime,
@@ -131,7 +132,7 @@ def load(fp: IO[bytes]) -> tuple[SdfHeader, np.ndarray, bytes]:
     # the decoded value.
     header = SdfHeader(
         dialect=dialect,
-        binary=True,
+        format=FileFormat.BINARY,
         manufacturer_id=manufacturer_raw.split(b"\x00", 1)[0]
         .decode("ascii", errors="replace")
         .rstrip(),
@@ -169,7 +170,7 @@ def load(fp: IO[bytes]) -> tuple[SdfHeader, np.ndarray, bytes]:
 def dump(header: SdfHeader, data: np.ndarray, fp: IO[bytes], trailer: bytes = b"") -> None:
     """Serialize a header/data pair to the binary SDF representation.
 
-    :param header: Header describing ``data``; ``header.binary`` is ignored.
+    :param header: Header describing ``data``; ``header.format`` is ignored.
     :param data: ``(num_profiles, num_points)`` array of height values in
         metres. ``NaN`` marks non-measured or spurious points.
     :param trailer: Optional raw record 3 trailer content.
@@ -231,7 +232,7 @@ def loads(data: bytes) -> tuple[SdfHeader, np.ndarray, bytes]:
 def dumps(header: SdfHeader, data: np.ndarray, trailer: bytes = b"") -> bytes:
     """Serialize a header/data pair to an in-memory binary SDF blob.
 
-    :param header: Header describing ``data``; ``header.binary`` is ignored.
+    :param header: Header describing ``data``; ``header.format`` is ignored.
     :param data: ``(num_profiles, num_points)`` array of height values in
         metres. ``NaN`` marks non-measured or spurious points.
     :param trailer: Optional raw record 3 trailer content.

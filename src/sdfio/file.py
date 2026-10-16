@@ -10,7 +10,6 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime
-from enum import Enum, auto
 from pathlib import Path
 from types import MappingProxyType
 from typing import IO, Literal
@@ -24,6 +23,7 @@ from .header import (
     ASCII_PREFIX,
     BINARY_PREFIX,
     MAGIC_SIZE,
+    FileFormat,
     SdfDialect,
     SdfHeader,
     SdfMetadata,
@@ -37,13 +37,6 @@ __all__ = ["FileFormat", "SdfFile", "read", "write"]
 
 PathLike = str | os.PathLike[str]
 PathOrStream = PathLike | IO[bytes]
-
-
-class FileFormat(Enum):
-    """ASCII or binary SDF file representation."""
-
-    ASCII = auto()
-    BINARY = auto()
 
 
 # eq=False: dataclass's auto __eq__ would do `data == other.data`, which
@@ -350,7 +343,7 @@ class SdfFile:
             fits ``data`` into ``metadata.data_type`` without overflow (see
             :func:`sdfio.datatypes.suggest_z_scale`).
         :param format: :attr:`FileFormat.ASCII` or :attr:`FileFormat.BINARY`, which is what
-            :attr:`SdfHeader.binary` is set from.
+            :attr:`SdfHeader.format` is set to.
         :param metadata: Reusable header template (``dialect``,
             ``manufacturer_id``, ``create_date``, ``mod_date``, ``z_resolution``,
             ``data_type``); defaults to :class:`SdfMetadata`'s own defaults
@@ -367,8 +360,8 @@ class SdfFile:
 
         >>> import numpy as np
         >>> sdf = SdfFile.from_array(np.zeros((2, 3)), x_scale=1e-6, y_scale=1e-6)
-        >>> sdf.data.shape, sdf.header.dialect.value, sdf.header.binary
-        ((2, 3), 'ISO-2.0', True)
+        >>> sdf.data.shape, sdf.header.dialect.value, sdf.header.format.name
+        ((2, 3), 'ISO-2.0', 'BINARY')
         """
         array = np.asarray(data, dtype=np.float64)
         if array.ndim != 2:
@@ -383,7 +376,7 @@ class SdfFile:
         now = datetime.now(UTC)
         header = SdfHeader(
             dialect=meta.dialect,
-            binary=format == FileFormat.BINARY,
+            format=format,
             manufacturer_id=meta.manufacturer_id,
             create_date=meta.create_date or now,
             mod_date=meta.mod_date or now,
@@ -433,7 +426,7 @@ class SdfFile:
         """Serialize this file to an in-memory blob, overriding the ASCII/binary format if given.
 
         :param format: Defaults to the format the data was read with (or
-            ``header.binary`` if constructed directly).
+            ``header.format`` if constructed directly).
         :returns: The serialized ``.sdf`` file contents, always as ``bytes``
             (the ASCII format is 7-bit ASCII text, so it is returned
             encoded rather than as ``str``).
@@ -445,9 +438,8 @@ class SdfFile:
         """
         if format is not None and not isinstance(format, FileFormat):
             raise TypeError(f"format must be a FileFormat member, got {format!r}")
-        binary = self.header.binary if format is None else format == FileFormat.BINARY
-        header = replace(self.header, binary=binary)
-        if binary:
+        header = replace(self.header, format=self.header.format if format is None else format)
+        if header.format is FileFormat.BINARY:
             return _binary.dumps(header, self.data, _as_bytes(self.trailer))
         return _ascii.dumps(header, self.data, _as_text(self.trailer)).encode("ascii")
 
@@ -456,7 +448,7 @@ class SdfFile:
 
         :param path: Destination path, or an open binary file object.
         :param format: Defaults to the format the data was read with (or
-            ``header.binary`` if constructed directly).
+            ``header.format`` if constructed directly).
         :raises SdfFormatError: See :meth:`dumps`.
         """
         _write_bytes(path, self.dumps(format=format))

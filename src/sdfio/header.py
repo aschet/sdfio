@@ -10,7 +10,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from enum import IntEnum, StrEnum
+from enum import Enum, IntEnum, StrEnum, auto
 
 from .exceptions import SdfFormatError, SdfVersionError
 
@@ -20,6 +20,7 @@ __all__ = [
     "MAGICS",
     "MAGIC_SIZE",
     "DataType",
+    "FileFormat",
     "SdfDialect",
     "SdfHeader",
     "SdfMetadata",
@@ -42,6 +43,13 @@ __all__ = [
 ASCII_PREFIX = "a"
 #: First character of the file magic: selects the binary representation.
 BINARY_PREFIX = "b"
+
+
+class FileFormat(Enum):
+    """ASCII or binary SDF file representation."""
+
+    ASCII = auto()
+    BINARY = auto()
 
 
 class SdfDialect(StrEnum):
@@ -457,8 +465,8 @@ class SdfHeader:
     :param dialect: SDF dialect and version (see :class:`SdfDialect`).
         Accepts a raw ``"ISO-2.0"``-shaped string as a convenience, which is
         coerced to :class:`SdfDialect`.
-    :param binary: Whether the file uses the binary (``True``) or ASCII
-        (``False``) representation.
+    :param format: Whether the file uses the binary or the ASCII representation, see
+        :class:`FileFormat`.
     :param manufacturer_id: Measurement instrument manufacturer's identifier;
         may include the source of the data, hardware and software identifiers.
     :param create_date: Original creation date and time, or ``None`` if not
@@ -485,10 +493,11 @@ class SdfHeader:
     :param data_type: ``DataType`` code, see :mod:`sdfio.datatypes`.
     :raises SdfVersionError: If ``dialect`` is not a valid :class:`SdfDialect`
         member.
+    :raises TypeError: If ``format`` is not a :class:`FileFormat` member.
     """
 
     dialect: SdfDialect = SdfDialect.ISO_2_0
-    binary: bool = True
+    format: FileFormat = FileFormat.BINARY
     manufacturer_id: str = "sdfio"
     create_date: datetime | None = field(default_factory=lambda: datetime.now(UTC))
     mod_date: datetime | None = field(default_factory=lambda: datetime.now(UTC))
@@ -501,13 +510,15 @@ class SdfHeader:
     data_type: int = DataType.BINARY64
 
     def __post_init__(self) -> None:
-        """Coerce and validate the SDF dialect."""
+        """Coerce and validate the SDF dialect, and validate the file format."""
         try:
             self.dialect = SdfDialect(self.dialect)
         except ValueError:
             raise SdfVersionError(
                 f"Unsupported SDF dialect {self.dialect!r}, expected one of {tuple(SdfDialect)}"
             ) from None
+        if not isinstance(self.format, FileFormat):
+            raise TypeError(f"format must be a FileFormat member, got {self.format!r}")
 
     def __setattr__(self, name: str, value: object) -> None:
         """Hold ``create_date`` and ``mod_date`` as UTC to the minute, whenever they are set."""
@@ -533,7 +544,7 @@ class SdfHeader:
     @property
     def magic(self) -> str:
         """8-character file magic (dialect and version) written at the start of the file."""
-        prefix = BINARY_PREFIX if self.binary else ASCII_PREFIX
+        prefix = BINARY_PREFIX if self.format is FileFormat.BINARY else ASCII_PREFIX
         return f"{prefix}{self.dialect}"
 
 
@@ -544,7 +555,7 @@ class SdfMetadata:
     Holds exactly the :class:`SdfHeader` fields that are meaningful to reuse
     across many :func:`sdfio.write` calls -- as opposed to ``x_scale``/
     ``y_scale``/``z_scale``/``format``, which differ on every call and are
-    write()'s own parameters, and ``num_points``/``num_profiles``/``binary``,
+    write()'s own parameters, and ``num_points``/``num_profiles``/``format``,
     which write() always derives itself.
     Every field here is used as given, with no overriding.
 

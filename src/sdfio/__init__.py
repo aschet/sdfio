@@ -80,8 +80,8 @@ A file is converted to another dialect, data type or representation with
     >>> str(converted.header.dialect)
     'ISO-1.0'
     >>> binary = sdfio.read(io.BytesIO(converted.dumps(format=sdfio.FileFormat.BINARY)))
-    >>> binary.header.binary
-    True
+    >>> binary.header.format.name
+    'BINARY'
 
 :meth:`SdfFile.points` gives the points of the grid with their ``x`` and ``y`` coordinates, as the
 ``(rows, columns, 3)`` array that plotting libraries take. With ``drop_invalid`` it is the

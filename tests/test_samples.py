@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 
 import sdfio
-from sdfio import DataType, SdfDialect, SdfFile
+from sdfio import DataType, FileFormat, SdfDialect, SdfFile
 from sdfio.cli import main
 
 SAMPLES = Path(__file__).parent / "samples"
@@ -99,7 +99,7 @@ def test_a_sample_reads_as_it_was_meant(case: tuple[SdfDialect, str, str]) -> No
     sdf = sdfio.read(_path(*case))
 
     assert sdf.header.dialect is dialect
-    assert sdf.header.binary is (suffix == "binary")
+    assert sdf.header.format is (FileFormat.BINARY if suffix == "binary" else FileFormat.ASCII)
     assert sdf.data_type is expected.data_type
     assert sdf.data.shape == expected.data.shape
     assert (sdf.header.x_scale, sdf.header.y_scale) == (generate.X_SCALE, generate.Y_SCALE)
@@ -138,8 +138,8 @@ def test_the_ascii_and_the_binary_file_hold_the_same_data(dialect: SdfDialect, n
     ascii_file = sdfio.read(_path(dialect, name, "ascii"))
     binary_file = sdfio.read(_path(dialect, name, "binary"))
 
-    assert ascii_file.header.binary is False
-    assert binary_file.header.binary is True
+    assert ascii_file.header.format is FileFormat.ASCII
+    assert binary_file.header.format is FileFormat.BINARY
     assert ascii_file.header.data_type == binary_file.header.data_type
     assert np.array_equal(np.isnan(ascii_file.data), np.isnan(binary_file.data))
     # The text of a binary32 has 7 digits, the text of a binary64 has 15.

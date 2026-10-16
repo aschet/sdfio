@@ -13,6 +13,7 @@ import sdfio
 from sdfio.exceptions import SdfVersionError
 from sdfio.header import (
     MAGICS,
+    FileFormat,
     SdfDialect,
     SdfHeader,
     SdfMetadata,
@@ -60,12 +61,12 @@ def test_header_rejects_unsupported_dialect() -> None:
 
 
 def test_header_magic() -> None:
-    assert SdfHeader(dialect=SdfDialect.ISO_2_0, binary=True).magic == "bISO-2.0"
-    assert SdfHeader(dialect=SdfDialect.ISO_1_0, binary=False).magic == "aISO-1.0"
+    assert SdfHeader(dialect=SdfDialect.ISO_2_0, format=FileFormat.BINARY).magic == "bISO-2.0"
+    assert SdfHeader(dialect=SdfDialect.ISO_1_0, format=FileFormat.ASCII).magic == "aISO-1.0"
 
 
 def test_header_magic_bcr() -> None:
-    header = SdfHeader(dialect=SdfDialect.BCR_1_0, binary=True)
+    header = SdfHeader(dialect=SdfDialect.BCR_1_0, format=FileFormat.BINARY)
     assert header.magic == "bBCR-1.0"
 
 
@@ -118,7 +119,7 @@ def test_header_is_profile_when_it_has_one_row(num_profiles: int, expected: bool
 def test_header_defaults_are_valid_iso_dialect() -> None:
     header = SdfHeader()
     assert header.dialect == SdfDialect.ISO_2_0
-    assert header.binary is True
+    assert header.format is FileFormat.BINARY
 
 
 @pytest.mark.parametrize("dialect", list(SdfDialect))
@@ -173,7 +174,7 @@ def test_the_instant_survives_a_file_in_every_dialect(dialect: SdfDialect, binar
     plus_two = datetime(2026, 10, 5, 14, 0, tzinfo=timezone(timedelta(hours=2)))
     header = SdfHeader(
         dialect=dialect,
-        binary=binary,
+        format=FileFormat.BINARY if binary else FileFormat.ASCII,
         num_points=1,
         num_profiles=1,
         create_date=plus_two,
@@ -193,7 +194,7 @@ def test_the_older_dialects_store_local_time_in_the_file(dialect: SdfDialect) ->
     instant = datetime(2026, 10, 5, 12, 0, tzinfo=UTC)
     header = SdfHeader(
         dialect=dialect,
-        binary=False,
+        format=FileFormat.ASCII,
         num_points=1,
         num_profiles=1,
         create_date=instant,
@@ -272,7 +273,7 @@ def test_a_date_field_that_is_no_date_is_not_recorded(
 def test_a_file_with_a_bad_date_field_is_still_read(dialect: SdfDialect, binary: bool) -> None:
     header = SdfHeader(
         dialect=dialect,
-        binary=binary,
+        format=FileFormat.BINARY if binary else FileFormat.ASCII,
         num_points=2,
         num_profiles=1,
         z_scale=1e-9,
@@ -288,3 +289,21 @@ def test_a_file_with_a_bad_date_field_is_still_read(dialect: SdfDialect, binary:
     assert loaded.header.create_date is None
     assert loaded.header.mod_date == header.mod_date  # only the broken field is not recorded
     assert loaded.data.shape == (1, 2)
+
+
+def test_the_header_carries_the_file_format_as_an_enum() -> None:
+    assert SdfHeader().format is FileFormat.BINARY
+    assert SdfHeader(format=FileFormat.ASCII).format is FileFormat.ASCII
+    assert SdfHeader(format=FileFormat.ASCII).magic == "aISO-2.0"
+
+
+@pytest.mark.parametrize("value", [True, False, 1, "binary", None])
+def test_the_header_rejects_a_file_format_that_is_not_an_enum_member(value: object) -> None:
+    with pytest.raises(TypeError, match="FileFormat"):
+        SdfHeader(format=value)  # type: ignore[arg-type]
+
+
+def test_the_former_binary_flag_is_gone() -> None:
+    with pytest.raises(TypeError):
+        SdfHeader(binary=True)  # type: ignore[call-arg]
+    assert not hasattr(SdfHeader(), "binary")

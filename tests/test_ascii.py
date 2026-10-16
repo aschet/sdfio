@@ -14,7 +14,7 @@ import pytest
 from sdfio import _ascii
 from sdfio.datatypes import DataType
 from sdfio.exceptions import SdfFormatError
-from sdfio.header import SdfDialect, SdfHeader
+from sdfio.header import FileFormat, SdfDialect, SdfHeader
 
 # Adapted from the standard's own worked example, using a small, fully
 # specified 2x3 grid (the original elides most values with "......").
@@ -44,7 +44,7 @@ ISO_ANNEX_A_EXAMPLE = (
 def test_loads_parses_header() -> None:
     header, _data, _trailer = _ascii.loads(ISO_ANNEX_A_EXAMPLE)
     assert header.dialect == SdfDialect.ISO_2_0
-    assert header.binary is False
+    assert header.format is FileFormat.ASCII
     assert header.manufacturer_id == "ISOTC213"
     assert header.num_points == 3
     assert header.num_profiles == 2
@@ -493,7 +493,7 @@ def test_loads_accepts_cr_lf_and_crlf_terminators(example: str, terminator: str)
 def test_loads_accepts_upper_case_ascii_prefix(example: str) -> None:
     # BCR-1.0 allows "a" or "A" as the first magic character.
     header, _data, _trailer = _ascii.loads("A" + example[1:])
-    assert header.binary is False
+    assert header.format is FileFormat.ASCII
 
 
 def test_loads_bcr_treats_type_maximum_as_bad_data() -> None:
