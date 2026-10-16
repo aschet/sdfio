@@ -15,7 +15,13 @@ from typing import Literal
 import numpy as np
 
 from . import _io
-from .datatypes import DataType, encode_raw, get_data_type, suggest_z_scale
+from .datatypes import (
+    DataType,
+    encode_raw,
+    get_data_type,
+    require_supported_data_type,
+    suggest_z_scale,
+)
 from .exceptions import SdfFormatError
 from .header import Header, Metadata
 from .revision import FileFormat, Revision
@@ -31,21 +37,17 @@ __all__ = ["SdfFile", "read", "write"]
 PathOrStream = _io.PathOrStream
 
 
-# eq=False: dataclass's auto __eq__ would do `data == other.data`, which
-# raises on a numpy array's ambiguous truth value; __eq__ below replaces it
-# with a NaN-aware, array-safe comparison instead.
+# eq=False: the generated __eq__ compares arrays with ==, which is ambiguous for NumPy.
 @dataclass(eq=False)
 class SdfFile:
-    """In-memory representation of an SDF surface data file.
+    """An SDF surface data file in memory.
 
-    :param header: Parsed record 1 header fields.
-    :param data: ``(num_profiles, num_points)`` array of height values in
-        metres, with ``NaN`` marking non-measured or spurious points. ``y``
-        increases with row index, in a right-handed coordinate system --
-        see :attr:`x_axis`/:attr:`y_axis`. It is held as a 2-D ``float64`` array, whenever it
-        is set, and the number of points and profiles of the file are its shape.
-    :param trailer: Raw record 3 trailer content; text for ASCII files,
-        bytes for binary files.
+    :param header: Record 1.
+    :param data: ``(num_profiles, num_points)`` array of height values in metres, with ``NaN``
+        for a point that was not measured. It is held as a 2-D ``float64`` array whenever it is
+        set, and its shape is the number of profiles and points of the file. ``y`` increases with
+        the row, see :attr:`y_axis`.
+    :param trailer: Record 3: text from an ASCII file, bytes from a binary file.
     """
 
     header: Header
@@ -70,30 +72,20 @@ class SdfFile:
 
     @property
     def x_axis(self) -> np.ndarray:
-        """X-axis coordinates in metres: ``x_j = (j - 1) * x_scale``, ``j = 1..num_points``.
+        """Return the x coordinates of the columns in metres: ``x_j = (j - 1) * x_scale``.
 
-        ``num_points`` (not ``num_profiles``) is the correct length here, per
-        the standard's own coordinate formula and its illustrating figure.
-        The current edition has a separate sentence elsewhere that states the
-        opposite pairing, contradicting the formula and figure; a later
-        edition fixes that sentence to agree with the formula instead.
+        There is one per point of a row. One sentence of the 2026 edition of the standard pairs
+        the numbers the other way round, against its formula and figure; a later edition fixes it.
         """
         return np.arange(self.data.shape[1]) * self.header.x_scale
 
     @property
     def y_axis(self) -> np.ndarray:
-        """Y-axis coordinates in metres: ``y_i = (i - 1) * y_scale``, ``i = 1..num_profiles``.
+        """Return the y coordinates of the rows in metres: ``y_i = (i - 1) * y_scale``.
 
-        ``y`` increases with row index, per the standard's right-handed
-        coordinate system. :attr:`RevisionRules.reverses_profile_order` is what
-        keeps this true for BCR-1.0 too, despite its different on-disk row
-        order.
-
-        See :attr:`x_axis` for why ``num_profiles`` (not ``num_points``) is
-        the correct length here.
-
-        For a profile (:attr:`is_profile`), the standard calls ``y_scale``
-        meaningless; this returns ``[0.0]`` regardless of its value.
+        ``y`` increases with the row, in the right-handed coordinate system of the standard, for
+        every revision, see :attr:`RevisionRules.reverses_profile_order`. For a profile the
+        standard calls ``y_scale`` meaningless, and the result is ``[0.0]``.
         """
         return np.arange(self.data.shape[0]) * self.header.y_scale
 
@@ -156,35 +148,23 @@ class SdfFile:
         trailer: str | bytes | None = None,
         refit_z_scale: bool = False,
     ) -> SdfFile:
-        """Return a copy of this file retargeted to a different SDF revision.
+        """Return a copy of this file retargeted to another revision.
 
-        Converting between revisions can fail for three reasons, each resolved
-        by an explicit, opt-in parameter rather than silently guessing:
+        What the new revision does not take is not guessed; each is a parameter:
 
-        - ``data_type``: some data types are revision-restricted (e.g.
-          ``binary32``/``int8`` are ISO-2.0 only; BCR has no such
-          restriction). Pass a compatible replacement if the current type
-          isn't valid for ``revision``.
-        - Trailer: a revision for which :attr:`RevisionRules.requires_tagged_trailer`
-          is ``True`` requires a tagged "Name = Value" trailer, or none at
-          all; others have no such requirement. If the current trailer
-          wouldn't be valid for ``revision``, pass a replacement (e.g. ``""``
-          to drop it).
-        - ``refit_z_scale``: the data may not fit the new data type with the
-          current ``z_scale``, for example when ``binary64`` becomes ``int16``,
-          which the file would only report when it is written. With
-          ``refit_z_scale=True`` the ``z_scale`` is kept if the data fits the new
-          data type in ``revision``, and otherwise replaced by the smallest one that
-          does, see :func:`sdfio.datatypes.suggest_z_scale`. The data is not changed.
+        - ``data_type``: some data types exist in some revisions only, such as ``binary32`` and
+          ``int8`` in ISO-2.0 and BCR-1.0. Pass one the new revision has.
+        - ``trailer``: ISO-2.0 requires a tagged "Name = Value" trailer, or none. Pass a
+          replacement, such as ``""``, if the current one doesn't fit.
+        - ``refit_z_scale``: the data may not fit the new data type at the current ``z_scale``,
+          which the write would report. With ``True`` the ``z_scale`` is kept if the data fits,
+          and otherwise replaced by the smallest that does, see
+          :func:`sdfio.datatypes.suggest_z_scale`. The data is not changed.
 
-        Timestamps need no such parameter: ``create_date``/``mod_date`` are
-        held as UTC for every revision and are converted to the convention of
-        ``revision`` (UTC, or the local time of the system for the older
-        revisions) when the file is written, see
-        :func:`sdfio.header.format_sdf_datetime`.
+        The dates need no parameter. They are UTC in every revision and converted to the
+        convention of the revision when the file is written.
 
-        :raises SdfFormatError: If ``data_type`` isn't valid for ``revision``,
-            or the trailer isn't valid for ``revision``.
+        :raises SdfFormatError: If ``data_type`` or the trailer doesn't fit ``revision``.
 
         Converting to a different revision::
 
@@ -199,15 +179,13 @@ class SdfFile:
             >>> str(converted.header.revision)
             'ISO-2.0'
 
-        The data type can be changed on its own too, by passing the
-        file's current revision back in unchanged::
+        To change only the data type, pass the current revision::
 
             >>> retyped = sdf.with_revision(sdf.header.revision, data_type=sdfio.DataType.INT16)
             >>> retyped.header.data_type.name
             'INT16'
 
-        Heights that do not fit the new data type at the old ``z_scale`` are
-        scaled so that they do, with ``refit_z_scale``::
+        ``refit_z_scale`` takes a scale that fits::
 
             >>> tall = sdfio.SdfFile.from_array(
             ...     np.array([[0.0, 0.5]]), x_scale=1e-6, y_scale=1e-6, z_scale=1e-9
@@ -217,14 +195,9 @@ class SdfFile:
             ... ).header.z_scale > 1e-9
             True
         """
-        resolved_data_type = get_data_type(
-            self.header.data_type if data_type is None else data_type
+        resolved_data_type = require_supported_data_type(
+            self.header.data_type if data_type is None else data_type, revision
         )
-        if not resolved_data_type.is_supported(revision):
-            raise SdfFormatError(
-                f"Data type {resolved_data_type.type.name} is not valid for SDF revision "
-                f"{revision}; pass a compatible data_type"
-            )
 
         new_trailer = self.trailer if trailer is None else trailer
         validate_trailer_tagged(revision, new_trailer)
@@ -277,14 +250,11 @@ class SdfFile:
         return SdfFile(header=header, data=array, trailer=self.trailer)
 
     def raw_data(self) -> np.ndarray:
-        """Coded height values in the file's native on-disk dtype.
+        """Return the coded heights in the on-disk dtype of the data type.
 
-        This is what is actually written to (or read from) the data area:
-        ``data / z_scale``, rounded and cast to ``header.data_type``'s dtype,
-        with non-measured/spurious points set to that type's sentinel value
-        instead of ``NaN``. Recomputed on each call from the
-        current ``data``/``header``, so it always reflects in-place edits to
-        either.
+        That is ``data / z_scale``, rounded, with the marker of the revision instead of ``NaN``
+        for a point that was not measured. It is computed on each call, so it follows changes
+        of ``data`` and ``header``.
 
         :raises SdfFormatError: If a value is out of range for
             ``header.data_type``, or collides with its invalid-point sentinel.
@@ -294,20 +264,13 @@ class SdfFile:
 
     @property
     def trailer_fields(self) -> Mapping[str, str]:
-        """Trailer content as "Name = Value" fields, the tagged format the header uses.
+        """Return the trailer as "Name = Value" fields, the tagged format of the header.
 
-        Required on write for a revision whose
-        :attr:`RevisionRules.requires_tagged_trailer` is ``True`` (ISO-2.0);
-        optional elsewhere.
-
-        Never raises: a line that isn't "Name = Value" is silently dropped
-        (see :func:`sdfio.trailer.sanitize_tagged_fields`). Use
-        :func:`sdfio.trailer.parse_tagged_fields` directly to detect a
-        malformed trailer instead.
-
-        A read-only, freshly-parsed snapshot, not a live view -- mutating it
-        in place raises ``TypeError``; assign the whole property to change
-        the trailer (``sdf.trailer_fields = {**sdf.trailer_fields, "X": "Y"}``).
+        ISO-2.0 requires this form on write. A line of another form is left out, see
+        :func:`sdfio.trailer.sanitize_tagged_fields`; use
+        :func:`sdfio.trailer.parse_tagged_fields` to detect it instead. The result is a read-only
+        snapshot. Assign the whole property to change the trailer:
+        ``sdf.trailer_fields = {**sdf.trailer_fields, "X": "Y"}``.
 
         >>> import numpy as np
         >>> from sdfio import SdfFile, Header
@@ -316,8 +279,6 @@ class SdfFile:
         >>> sdf.trailer_fields
         mappingproxy({'OperatorName': 'Jane Doe'})
         """
-        # sanitize_tagged_fields() already guarantees clean "Name = Value"
-        # text, so parse_tagged_fields() here can never raise.
         sanitized = sanitize_tagged_fields(_io.as_text(self.trailer))
         return MappingProxyType(parse_tagged_fields(sanitized))
 
@@ -339,33 +300,23 @@ class SdfFile:
     ) -> SdfFile:
         """Build an in-memory SDF file from a NumPy array, without writing it.
 
-        The arguments are those of :func:`sdfio.write`, which builds the file this way and
-        saves it. Only the shape of ``data`` is checked here, and ``metadata`` has checked its data
-        type against its revision. Everything else, such as whether ``data`` fits the data type,
-        the ``z_scale``, the manufacturer ID and the trailer, is checked when the file is
-        written, see :meth:`save` and :meth:`dumps`.
+        The arguments are those of :func:`sdfio.write`, which builds the file this way and saves
+        it. Only the shape of ``data`` is checked here, and ``metadata`` has checked its data type
+        against its revision. Whether ``data`` fits the data type, the manufacturer ID and the
+        trailer are checked when the file is written, see :meth:`save`.
 
-        :param data: ``(num_profiles, num_points)`` array of height values in
-            metres. ``NaN`` marks non-measured or spurious points. An array that already holds
-            ``float64`` values is used as it is, not copied.
+        :param data: ``(num_profiles, num_points)`` array of height values in metres. ``NaN``
+            marks points that were not measured. A ``float64`` array is used as it is, not copied.
         :param x_scale: Sampling interval along x, in metres.
         :param y_scale: Sampling interval along y, in metres.
-        :param z_scale: Scale factor applied to the coded height values, or
-            ``"auto"`` to pick the smallest (highest-resolution) scale that
-            fits ``data`` into ``metadata.data_type`` without overflow (see
-            :func:`sdfio.datatypes.suggest_z_scale`).
-        :param format: :attr:`FileFormat.ASCII` or :attr:`FileFormat.BINARY`, which is what
-            :attr:`Header.format` is set to.
-        :param metadata: Reusable header template (``revision``,
-            ``manufacturer_id``, ``create_date``, ``mod_date``, ``z_resolution``,
-            ``data_type``); defaults to :class:`Metadata`'s own defaults
-            (ISO-2.0, ``binary64``, the current time). Every field on it is used as given --
-            there is no overlap with ``x_scale``/``y_scale``/``z_scale``/``format`` above.
-            Pass a shared template to build several files with the same metadata, e.g.
-            ``metadata=Metadata(manufacturer_id="acme")``. ``manufacturer_id`` must be 7-bit
-            ASCII; values longer than 10 bytes are silently truncated. The dates are held as UTC
-            to the minute, see :class:`Header`.
-        :param trailer: Optional record 3 trailer content.
+        :param z_scale: Scale factor of the coded heights, or ``"auto"`` for the smallest that
+            fits ``data`` into ``metadata.data_type``, see
+            :func:`sdfio.datatypes.suggest_z_scale`.
+        :param format: The encoding, which becomes :attr:`Header.format`.
+        :param metadata: Header template, shared by files that have the same metadata, such as
+            ``Metadata(manufacturer_id="acme")``. The defaults are ISO-2.0, ``binary64`` and the
+            current time. A binary file holds 10 characters of the manufacturer ID.
+        :param trailer: Record 3, the trailer.
         :raises SdfFormatError: If ``data`` is not 2-D.
 
         >>> import numpy as np
@@ -479,32 +430,20 @@ def write(
     it without writing, and saved with :meth:`SdfFile.save`.
 
     :param path: Destination path, or an open binary file object.
-    :param data: ``(num_profiles, num_points)`` array of height values in
-        metres. ``NaN`` marks non-measured or spurious points.
+    :param data: ``(num_profiles, num_points)`` array of height values in metres. ``NaN`` marks
+        points that were not measured.
     :param x_scale: Sampling interval along x, in metres.
     :param y_scale: Sampling interval along y, in metres.
-    :param z_scale: Scale factor applied to the coded height values, or
-        ``"auto"`` to pick the smallest (highest-resolution) scale that
-        fits ``data`` into ``metadata.data_type`` without overflow (see
-        :func:`sdfio.datatypes.suggest_z_scale`).
-    :param format: :attr:`FileFormat.ASCII` or :attr:`FileFormat.BINARY`.
-    :param metadata: Reusable header template (``revision``,
-        ``manufacturer_id``, ``create_date``, ``mod_date``, ``z_resolution``,
-        ``data_type``); defaults to :class:`Metadata`'s own defaults
-        (ISO-2.0, ``binary64``, current UTC timestamps). Every field on it is
-        used as given -- there is no overlap with
-        ``x_scale``/``y_scale``/``z_scale``/``format`` above. Pass a shared template to write
-        several files with the same metadata, e.g. ``metadata=Metadata(manufacturer_id="acme")``.
-        ``manufacturer_id`` must be 7-bit ASCII; values longer than 10 bytes
-        are silently truncated.
-    :param trailer: Optional record 3 trailer content; must be 7-bit ASCII.
-    :raises SdfFormatError: If ``data`` is not 2-D, ``z_scale`` is not
-        positive, ``metadata.manufacturer_id`` isn't 7-bit ASCII,
-        ``metadata.data_type`` is invalid or unsupported for
-        ``metadata.revision``, ``trailer`` isn't 7-bit ASCII, a
-        non-empty ``trailer`` isn't in the tagged "Name = Value" format for a
-        revision that requires it, or ``data`` does not fit
-        ``metadata.data_type`` without overflow.
+    :param z_scale: Scale factor of the coded heights, or ``"auto"`` for the smallest that fits
+        ``data`` into ``metadata.data_type``, see :func:`sdfio.datatypes.suggest_z_scale`.
+    :param format: The encoding, ASCII or binary.
+    :param metadata: Header template, shared by files that have the same metadata, such as
+        ``Metadata(manufacturer_id="acme")``. The defaults are ISO-2.0, ``binary64`` and the
+        current time. A binary file holds 10 characters of the manufacturer ID.
+    :param trailer: Record 3, the trailer, as 7-bit ASCII.
+    :raises SdfFormatError: If ``data`` is not 2-D, ``z_scale`` is not positive, the manufacturer
+        ID or the trailer is not 7-bit ASCII, a trailer is not tagged "Name = Value" where the
+        revision requires it, or ``data`` does not fit ``metadata.data_type``.
 
     ``path`` also accepts an open binary stream, e.g. to avoid touching disk::
 
