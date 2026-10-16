@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 
 import sdfio
-from sdfio.header import Revision
+from sdfio.revision import Revision
 
 SAMPLES_DIR = Path(__file__).parent / "interop_samples"
 NUM_PROFILES, NUM_POINTS = 20, 30

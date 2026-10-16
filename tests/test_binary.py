@@ -17,7 +17,8 @@ from sdfio import _binary
 from sdfio.datatypes import DataType
 from sdfio.exceptions import SdfFormatError
 from sdfio.file import SdfFile
-from sdfio.header import MAGIC_SIZE, FileFormat, Header, Revision
+from sdfio.header import Header
+from sdfio.revision import MAGIC_SIZE, FileFormat, Revision
 
 
 def _make_header(**overrides: Any) -> Header:

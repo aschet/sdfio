@@ -7,15 +7,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from enum import IntEnum
 from typing import Final
 
 import numpy as np
 
 from .exceptions import SdfFormatError
-from .header import DataType, Revision
+from .revision import Revision
 
-# DataType lives in .header (see its docstring for why); re-exported here
-# since callers reasonably expect it alongside the rest of the data-type API.
 __all__ = [
     "DATA_TYPES",
     "DataType",
@@ -27,6 +26,24 @@ __all__ = [
     "suggest_z_scale",
     "validate_data_range",
 ]
+
+
+class DataType(IntEnum):
+    """SDF data area storage types, by their ``DataType`` header field code.
+
+    Codes 0-2 are unsigned integer types from the pre-standard BCR-1.0
+    proposal; ISO dropped them (see :mod:`.datatypes`'s ``DATA_TYPES`` for
+    which revisions accept which code).
+    """
+
+    UINT8 = 0
+    UINT16 = 1
+    UINT32 = 2
+    BINARY32 = 3
+    INT8 = 4
+    INT16 = 5
+    INT32 = 6
+    BINARY64 = 7
 
 
 # BCR-1.0 marks a bad floating point value with any value at or above the nominal

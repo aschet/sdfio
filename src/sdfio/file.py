@@ -20,14 +20,9 @@ import numpy as np
 from . import _ascii, _binary
 from .datatypes import DataType, encode_raw, get_data_type, suggest_z_scale
 from .exceptions import SdfFormatError
-from .header import (
-    ASCII_PREFIX,
-    BINARY_PREFIX,
-    MAGIC_SIZE,
-    FileFormat,
-    Header,
-    Metadata,
-    Revision,
+from .header import Header, Metadata
+from .revision import ASCII_PREFIX, BINARY_PREFIX, MAGIC_SIZE, FileFormat, Revision
+from .trailer import (
     format_tagged_fields,
     parse_tagged_fields,
     sanitize_tagged_fields,
@@ -318,8 +313,8 @@ class SdfFile:
         optional elsewhere.
 
         Never raises: a line that isn't "Name = Value" is silently dropped
-        (see :func:`sdfio.header.sanitize_tagged_fields`). Use
-        :func:`sdfio.header.parse_tagged_fields` directly to detect a
+        (see :func:`sdfio.trailer.sanitize_tagged_fields`). Use
+        :func:`sdfio.trailer.parse_tagged_fields` directly to detect a
         malformed trailer instead.
 
         A read-only, freshly-parsed snapshot, not a live view -- mutating it

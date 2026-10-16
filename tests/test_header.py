@@ -11,16 +11,9 @@ import pytest
 
 import sdfio
 from sdfio.exceptions import SdfVersionError
-from sdfio.header import (
-    MAGICS,
-    FileFormat,
-    Header,
-    Metadata,
-    Revision,
-    format_sdf_datetime,
-    parse_sdf_datetime,
-    sanitize_tagged_fields,
-)
+from sdfio.header import Header, Metadata, format_sdf_datetime, parse_sdf_datetime
+from sdfio.revision import MAGICS, FileFormat, Revision
+from sdfio.trailer import sanitize_tagged_fields
 
 
 def test_datetime_roundtrip() -> None:

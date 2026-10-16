@@ -12,7 +12,7 @@ import numpy as np
 
 import sdfio
 from sdfio.file import FileFormat
-from sdfio.header import Revision
+from sdfio.revision import Revision
 
 
 def _sample_data() -> np.ndarray:

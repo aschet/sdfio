@@ -109,11 +109,9 @@ from .datatypes import (
 )
 from .exceptions import SdfError, SdfFormatError, SdfVersionError
 from .file import FileFormat, SdfFile, read, write
-from .header import (
-    MAGICS,
-    Header,
-    Metadata,
-    Revision,
+from .header import Header, Metadata
+from .revision import MAGICS, Revision
+from .trailer import (
     format_tagged_fields,
     parse_tagged_fields,
     sanitize_tagged_fields,

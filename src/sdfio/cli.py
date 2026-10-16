@@ -15,9 +15,8 @@ from . import __version__
 from .datatypes import DataType
 from .exceptions import SdfError, SdfFormatError
 from .file import read
-from .header import (
-    FileFormat,
-    Revision,
+from .revision import FileFormat, Revision
+from .trailer import (
     format_tagged_fields,
     parse_tagged_fields,
     sanitize_tagged_fields,

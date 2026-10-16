@@ -15,21 +15,16 @@ import numpy as np
 from .datatypes import decode_raw, encode_raw, require_supported_data_type
 from .exceptions import SdfFormatError
 from .header import (
-    ASCII_PREFIX,
-    BINARY_PREFIX,
-    MAGIC_SIZE,
-    FileFormat,
     Header,
-    Revision,
     format_sdf_datetime,
     parse_sdf_datetime,
     validate_check_type,
     validate_compression,
     validate_manufacturer_id_ascii,
-    validate_trailer_ascii,
-    validate_trailer_tagged,
     validate_z_scale,
 )
+from .revision import ASCII_PREFIX, BINARY_PREFIX, MAGIC_SIZE, FileFormat, Revision
+from .trailer import validate_trailer_ascii, validate_trailer_tagged
 
 __all__ = ["HEADER_SIZE", "dump", "dumps", "load", "loads"]
 

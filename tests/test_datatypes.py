@@ -16,7 +16,7 @@ from sdfio.datatypes import (
     validate_data_range,
 )
 from sdfio.exceptions import SdfFormatError
-from sdfio.header import Revision
+from sdfio.revision import Revision
 
 
 def test_get_data_type_by_code() -> None:

@@ -15,7 +15,8 @@ import pytest
 from sdfio import _ascii
 from sdfio.datatypes import DataType
 from sdfio.exceptions import SdfFormatError
-from sdfio.header import FileFormat, Header, Revision
+from sdfio.header import Header
+from sdfio.revision import FileFormat, Revision
 
 # Adapted from the standard's own worked example, using a small, fully
 # specified 2x3 grid (the original elides most values with "......").

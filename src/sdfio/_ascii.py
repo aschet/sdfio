@@ -16,21 +16,16 @@ from ._numeric import format_scientific
 from .datatypes import DataType, DataTypeInfo, require_supported_data_type, validate_data_range
 from .exceptions import SdfFormatError
 from .header import (
-    ASCII_PREFIX,
-    BINARY_PREFIX,
-    FileFormat,
     Header,
-    Revision,
     format_sdf_datetime,
     parse_sdf_datetime,
-    parse_tagged_fields,
     validate_check_type,
     validate_compression,
     validate_manufacturer_id_ascii,
-    validate_trailer_ascii,
-    validate_trailer_tagged,
     validate_z_scale,
 )
+from .revision import ASCII_PREFIX, BINARY_PREFIX, FileFormat, Revision
+from .trailer import parse_tagged_fields, validate_trailer_ascii, validate_trailer_tagged
 
 __all__ = ["dump", "dumps", "load", "loads"]
 
