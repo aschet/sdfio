@@ -25,9 +25,9 @@ from .header import (
     BINARY_PREFIX,
     MAGIC_SIZE,
     FileFormat,
-    SdfDialect,
-    SdfHeader,
-    SdfMetadata,
+    Header,
+    Metadata,
+    Revision,
     format_tagged_fields,
     parse_tagged_fields,
     sanitize_tagged_fields,
@@ -56,7 +56,7 @@ class SdfFile:
         bytes for binary files.
     """
 
-    header: SdfHeader
+    header: Header
     data: np.ndarray
     trailer: str | bytes = ""
 
@@ -87,7 +87,7 @@ class SdfFile:
         """Y-axis coordinates in metres: ``y_i = (i - 1) * y_scale``, ``i = 1..num_profiles``.
 
         ``y`` increases with row index, per the standard's right-handed
-        coordinate system. :attr:`SdfDialect.reverses_profile_order` is what
+        coordinate system. :attr:`Revision.reverses_profile_order` is what
         keeps this true for BCR-1.0 too, despite its different on-disk row
         order.
 
@@ -115,8 +115,8 @@ class SdfFile:
             ``(header.num_profiles, header.num_points)``.
 
         >>> import numpy as np
-        >>> from sdfio import SdfFile, SdfHeader
-        >>> header = SdfHeader(num_points=3, num_profiles=2, x_scale=1e-6, y_scale=2e-6)
+        >>> from sdfio import SdfFile, Header
+        >>> header = Header(num_points=3, num_profiles=2, x_scale=1e-6, y_scale=2e-6)
         >>> sdf = SdfFile(header=header, data=np.array([[0.0, 1.0, 2.0], [3.0, np.nan, 5.0]]))
         >>> points = sdf.points()
         >>> points.shape
@@ -148,9 +148,9 @@ class SdfFile:
         being 1.
 
         >>> import numpy as np
-        >>> from sdfio import SdfFile, SdfHeader
-        >>> profile = SdfFile(header=SdfHeader(num_points=3, num_profiles=1), data=np.zeros((1, 3)))
-        >>> surface = SdfFile(header=SdfHeader(num_points=3, num_profiles=2), data=np.zeros((2, 3)))
+        >>> from sdfio import SdfFile, Header
+        >>> profile = SdfFile(header=Header(num_points=3, num_profiles=1), data=np.zeros((1, 3)))
+        >>> surface = SdfFile(header=Header(num_points=3, num_profiles=2), data=np.zeros((2, 3)))
         >>> profile.is_profile, surface.is_profile
         (True, False)
         """
@@ -169,61 +169,61 @@ class SdfFile:
     def data_type(self, value: DataType | int) -> None:
         self.header.data_type = get_data_type(value).type
 
-    def with_dialect(
+    def with_revision(
         self,
-        dialect: SdfDialect,
+        revision: Revision,
         *,
         data_type: DataType | int | None = None,
         trailer: str | bytes | None = None,
         refit_z_scale: bool = False,
     ) -> SdfFile:
-        """Return a copy of this file retargeted to a different SDF dialect.
+        """Return a copy of this file retargeted to a different SDF revision.
 
-        Converting between dialects can fail for three reasons, each resolved
+        Converting between revisions can fail for three reasons, each resolved
         by an explicit, opt-in parameter rather than silently guessing:
 
-        - ``data_type``: some data types are dialect-restricted (e.g.
+        - ``data_type``: some data types are revision-restricted (e.g.
           ``binary32``/``int8`` are ISO-2.0 only; BCR has no such
           restriction). Pass a compatible replacement if the current type
-          isn't valid for ``dialect``.
-        - Trailer: a dialect for which :attr:`SdfDialect.requires_tagged_trailer`
+          isn't valid for ``revision``.
+        - Trailer: a revision for which :attr:`Revision.requires_tagged_trailer`
           is ``True`` requires a tagged "Name = Value" trailer, or none at
           all; others have no such requirement. If the current trailer
-          wouldn't be valid for ``dialect``, pass a replacement (e.g. ``""``
+          wouldn't be valid for ``revision``, pass a replacement (e.g. ``""``
           to drop it).
         - ``refit_z_scale``: the data may not fit the new data type with the
           current ``z_scale``, for example when ``binary64`` becomes ``int16``,
           which the file would only report when it is written. With
           ``refit_z_scale=True`` the ``z_scale`` is kept if the data fits the new
-          data type in ``dialect``, and otherwise replaced by the smallest one that
+          data type in ``revision``, and otherwise replaced by the smallest one that
           does, see :func:`sdfio.datatypes.suggest_z_scale`. The data is not changed.
 
         Timestamps need no such parameter: ``create_date``/``mod_date`` are
-        held as UTC for every dialect and are converted to the convention of
-        ``dialect`` (UTC, or the local time of the system for the older
-        dialects) when the file is written, see
+        held as UTC for every revision and are converted to the convention of
+        ``revision`` (UTC, or the local time of the system for the older
+        revisions) when the file is written, see
         :func:`sdfio.header.format_sdf_datetime`.
 
-        :raises SdfFormatError: If ``data_type`` isn't valid for ``dialect``,
-            or the trailer isn't valid for ``dialect``.
+        :raises SdfFormatError: If ``data_type`` isn't valid for ``revision``,
+            or the trailer isn't valid for ``revision``.
 
-        Converting to a different dialect::
+        Converting to a different revision::
 
             >>> import io
             >>> import numpy as np
             >>> import sdfio
             >>> buf = io.BytesIO()
             >>> sdfio.write(buf, np.zeros((2, 3)), x_scale=1e-6, y_scale=1e-6,
-            ...              metadata=sdfio.SdfMetadata(dialect=sdfio.SdfDialect.ISO_1_0))
+            ...              metadata=sdfio.Metadata(revision=sdfio.Revision.ISO_1_0))
             >>> sdf = sdfio.SdfFile.open(io.BytesIO(buf.getvalue()))
-            >>> converted = sdf.with_dialect(sdfio.SdfDialect.ISO_2_0)
-            >>> str(converted.header.dialect)
+            >>> converted = sdf.with_revision(sdfio.Revision.ISO_2_0)
+            >>> str(converted.header.revision)
             'ISO-2.0'
 
         The data type can be changed on its own too, by passing the
-        file's current dialect back in unchanged::
+        file's current revision back in unchanged::
 
-            >>> retyped = sdf.with_dialect(sdf.header.dialect, data_type=sdfio.DataType.INT16)
+            >>> retyped = sdf.with_revision(sdf.header.revision, data_type=sdfio.DataType.INT16)
             >>> retyped.data_type.name
             'INT16'
 
@@ -233,33 +233,33 @@ class SdfFile:
             >>> tall = sdfio.SdfFile.from_array(
             ...     np.array([[0.0, 0.5]]), x_scale=1e-6, y_scale=1e-6, z_scale=1e-9
             ... )
-            >>> tall.with_dialect(
-            ...     sdfio.SdfDialect.ISO_2_0, data_type=sdfio.DataType.INT16, refit_z_scale=True
+            >>> tall.with_revision(
+            ...     sdfio.Revision.ISO_2_0, data_type=sdfio.DataType.INT16, refit_z_scale=True
             ... ).header.z_scale > 1e-9
             True
         """
         resolved_data_type = get_data_type(
             self.header.data_type if data_type is None else data_type
         )
-        if not resolved_data_type.is_supported(dialect):
+        if not resolved_data_type.is_supported(revision):
             raise SdfFormatError(
-                f"Data type {resolved_data_type.type.name} is not valid for SDF dialect "
-                f"{dialect}; pass a compatible data_type"
+                f"Data type {resolved_data_type.type.name} is not valid for SDF revision "
+                f"{revision}; pass a compatible data_type"
             )
 
         new_trailer = self.trailer if trailer is None else trailer
-        validate_trailer_tagged(dialect, new_trailer)
+        validate_trailer_tagged(revision, new_trailer)
 
         z_scale = self.header.z_scale
         if refit_z_scale:
             try:
-                encode_raw(self.data, resolved_data_type, z_scale, dialect)
+                encode_raw(self.data, resolved_data_type, z_scale, revision)
             except SdfFormatError:  # the data does not fit the new type at this scale
-                z_scale = suggest_z_scale(self.data, resolved_data_type, dialect)
+                z_scale = suggest_z_scale(self.data, resolved_data_type, revision)
 
         new_header = replace(
             self.header,
-            dialect=dialect,
+            revision=revision,
             data_type=resolved_data_type.type,
             z_scale=z_scale,
         )
@@ -279,14 +279,14 @@ class SdfFile:
             ``header.data_type``, or collides with its invalid-point sentinel.
         """
         data_type = get_data_type(self.header.data_type)
-        return encode_raw(self.data, data_type, self.header.z_scale, self.header.dialect)
+        return encode_raw(self.data, data_type, self.header.z_scale, self.header.revision)
 
     @property
     def trailer_fields(self) -> Mapping[str, str]:
         """Trailer content as "Name = Value" fields, the tagged format the header uses.
 
-        Required on write for a dialect whose
-        :attr:`SdfDialect.requires_tagged_trailer` is ``True`` (ISO-2.0);
+        Required on write for a revision whose
+        :attr:`Revision.requires_tagged_trailer` is ``True`` (ISO-2.0);
         optional elsewhere.
 
         Never raises: a line that isn't "Name = Value" is silently dropped
@@ -299,8 +299,8 @@ class SdfFile:
         the trailer (``sdf.trailer_fields = {**sdf.trailer_fields, "X": "Y"}``).
 
         >>> import numpy as np
-        >>> from sdfio import SdfFile, SdfHeader
-        >>> sdf = SdfFile(header=SdfHeader(), data=np.zeros((1, 1)))
+        >>> from sdfio import SdfFile, Header
+        >>> sdf = SdfFile(header=Header(), data=np.zeros((1, 1)))
         >>> sdf.trailer_fields = {"OperatorName": "Jane Doe"}
         >>> sdf.trailer_fields
         mappingproxy({'OperatorName': 'Jane Doe'})
@@ -323,7 +323,7 @@ class SdfFile:
         y_scale: float,
         z_scale: float | Literal["auto"] = 1e-6,
         format: FileFormat = FileFormat.BINARY,
-        metadata: SdfMetadata | None = None,
+        metadata: Metadata | None = None,
         trailer: str | bytes = "",
     ) -> SdfFile:
         """Build an in-memory SDF file from a NumPy array, without writing it.
@@ -331,7 +331,7 @@ class SdfFile:
         The arguments are those of :func:`sdfio.write`, which builds the file this way and
         saves it. Only the shape of ``data`` and the data type code are checked here. Everything
         else, such as whether ``data`` fits the data type, whether the data type exists in the
-        dialect, the ``z_scale``, the manufacturer ID and the trailer, is checked when the file is
+        revision, the ``z_scale``, the manufacturer ID and the trailer, is checked when the file is
         written, see :meth:`save` and :meth:`dumps`.
 
         :param data: ``(num_profiles, num_points)`` array of height values in
@@ -344,39 +344,39 @@ class SdfFile:
             fits ``data`` into ``metadata.data_type`` without overflow (see
             :func:`sdfio.datatypes.suggest_z_scale`).
         :param format: :attr:`FileFormat.ASCII` or :attr:`FileFormat.BINARY`, which is what
-            :attr:`SdfHeader.format` is set to.
-        :param metadata: Reusable header template (``dialect``,
+            :attr:`Header.format` is set to.
+        :param metadata: Reusable header template (``revision``,
             ``manufacturer_id``, ``create_date``, ``mod_date``, ``z_resolution``,
-            ``data_type``); defaults to :class:`SdfMetadata`'s own defaults
+            ``data_type``); defaults to :class:`Metadata`'s own defaults
             (ISO-2.0, ``binary64``, the current time). Every field on it is used as given --
             there is no overlap with ``x_scale``/``y_scale``/``z_scale``/``format`` above, or
             with ``num_points``/``num_profiles``, which are always taken from ``data``'s shape.
             Pass a shared template to build several files with the same metadata, e.g.
-            ``metadata=SdfMetadata(manufacturer_id="acme")``. ``manufacturer_id`` must be 7-bit
+            ``metadata=Metadata(manufacturer_id="acme")``. ``manufacturer_id`` must be 7-bit
             ASCII; values longer than 10 bytes are silently truncated. The dates are held as UTC
-            to the minute, see :class:`SdfHeader`.
+            to the minute, see :class:`Header`.
         :param trailer: Optional record 3 trailer content.
         :raises SdfFormatError: If ``data`` is not 2-D or ``metadata.data_type`` is not a known
             data type code.
 
         >>> import numpy as np
         >>> sdf = SdfFile.from_array(np.zeros((2, 3)), x_scale=1e-6, y_scale=1e-6)
-        >>> sdf.data.shape, sdf.header.dialect.value, sdf.header.format.name
+        >>> sdf.data.shape, sdf.header.revision.value, sdf.header.format.name
         ((2, 3), 'ISO-2.0', 'BINARY')
         """
         array = np.asarray(data, dtype=np.float64)
         if array.ndim != 2:
             raise SdfFormatError("SDF data must be a 2-D (num_profiles, num_points) array")
-        meta = metadata if metadata is not None else SdfMetadata()
+        meta = metadata if metadata is not None else Metadata()
         resolved_data_type = get_data_type(meta.data_type)
         resolved_z_scale = (
-            suggest_z_scale(array, resolved_data_type, meta.dialect)
+            suggest_z_scale(array, resolved_data_type, meta.revision)
             if z_scale == "auto"
             else z_scale
         )
         now = datetime.now(UTC)
-        header = SdfHeader(
-            dialect=meta.dialect,
+        header = Header(
+            revision=meta.revision,
             format=format,
             manufacturer_id=meta.manufacturer_id,
             create_date=meta.create_date or now,
@@ -502,7 +502,7 @@ def write(
     y_scale: float,
     z_scale: float | Literal["auto"] = 1e-6,
     format: FileFormat = FileFormat.BINARY,
-    metadata: SdfMetadata | None = None,
+    metadata: Metadata | None = None,
     trailer: str | bytes = "",
 ) -> None:
     """Write a NumPy array to an SDF surface data file.
@@ -520,24 +520,24 @@ def write(
         fits ``data`` into ``metadata.data_type`` without overflow (see
         :func:`sdfio.datatypes.suggest_z_scale`).
     :param format: :attr:`FileFormat.ASCII` or :attr:`FileFormat.BINARY`.
-    :param metadata: Reusable header template (``dialect``,
+    :param metadata: Reusable header template (``revision``,
         ``manufacturer_id``, ``create_date``, ``mod_date``, ``z_resolution``,
-        ``data_type``); defaults to :class:`SdfMetadata`'s own defaults
+        ``data_type``); defaults to :class:`Metadata`'s own defaults
         (ISO-2.0, ``binary64``, current UTC timestamps). Every field on it is
         used as given -- there is no overlap with
         ``x_scale``/``y_scale``/``z_scale``/``format`` above, or with
         ``num_points``/``num_profiles``, which are always taken from
         ``data``'s shape. Pass a shared template to write several files with
-        the same metadata, e.g. ``metadata=SdfMetadata(manufacturer_id="acme")``.
+        the same metadata, e.g. ``metadata=Metadata(manufacturer_id="acme")``.
         ``manufacturer_id`` must be 7-bit ASCII; values longer than 10 bytes
         are silently truncated.
     :param trailer: Optional record 3 trailer content; must be 7-bit ASCII.
     :raises SdfFormatError: If ``data`` is not 2-D, ``z_scale`` is not
         positive, ``metadata.manufacturer_id`` isn't 7-bit ASCII,
         ``metadata.data_type`` is invalid or unsupported for
-        ``metadata.dialect``, ``trailer`` isn't 7-bit ASCII, a
+        ``metadata.revision``, ``trailer`` isn't 7-bit ASCII, a
         non-empty ``trailer`` isn't in the tagged "Name = Value" format for a
-        dialect that requires it, or ``data`` does not fit
+        revision that requires it, or ``data`` does not fit
         ``metadata.data_type`` without overflow.
 
     ``path`` also accepts an open binary stream, e.g. to avoid touching disk::

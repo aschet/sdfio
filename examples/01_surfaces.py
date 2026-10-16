@@ -30,7 +30,7 @@ print(f"the surface is {width:.3f} mm wide and {height:.3f} mm high")
 
 # Without a template a file is written as ISO-2.0 in the binary representation, with the heights
 # as 64-bit floating point numbers. The header holds what describes the file.
-print(sdf.header.dialect, "format:", sdf.header.format.name.lower(), sdf.data_type.name)
+print(sdf.header.revision, "format:", sdf.header.format.name.lower(), sdf.data_type.name)
 print("sampling intervals:", sdf.header.x_scale, sdf.header.y_scale)
 
 # The points of the grid with their coordinates, as an array of x, y and z.

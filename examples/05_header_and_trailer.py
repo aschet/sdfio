@@ -11,10 +11,10 @@ import numpy as np
 
 import sdfio
 
-# The metadata is a template for the header: the dialect, the data type, who made the data, when
+# The metadata is a template for the header: the revision, the data type, who made the data, when
 # and with which quantization step. Dates are in UTC for ISO-2.0.
-metadata = sdfio.SdfMetadata(
-    dialect=sdfio.SdfDialect.ISO_2_0,
+metadata = sdfio.Metadata(
+    revision=sdfio.Revision.ISO_2_0,
     manufacturer_id="Acme",
     create_date=datetime(2026, 3, 1, 9, 30, tzinfo=UTC),
     mod_date=datetime(2026, 3, 2, 14, 0, tzinfo=UTC),
@@ -36,7 +36,7 @@ sdfio.write(
 sdf = sdfio.read(io.BytesIO(buffer.getvalue()))
 
 header = sdf.header
-print(header.dialect, header.manufacturer_id, header.create_date, "..", header.mod_date)
+print(header.revision, header.manufacturer_id, header.create_date, "..", header.mod_date)
 print("quantization step:", header.z_resolution, "m, z scale:", header.z_scale)
 
 # The trailer holds free text that belongs to the measurement. As a list of Name = Value fields,
@@ -52,6 +52,6 @@ try:
     )
 except sdfio.SdfFormatError as error:
     print("refused:", error)
-older = sdfio.SdfMetadata(dialect=sdfio.SdfDialect.ISO_1_0)
+older = sdfio.Metadata(revision=sdfio.Revision.ISO_1_0)
 sdfio.write(io.BytesIO(), heights, x_scale=1e-6, y_scale=1e-6, metadata=older, trailer="free text")
 print("ISO-1.0 accepts free text")

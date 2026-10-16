@@ -2,7 +2,7 @@
 
 `input_iso2_ascii.sdf` was written by sdfio. The `mm11_*` files were
 produced by importing it into Digital Surf MountainsMap 11 and re-exporting
-as each dialect/format/data-type combination. `mm11_diagram.png` is
+as each revision/format/data-type combination. `mm11_diagram.png` is
 MountainsMap's own rendering of the input file.
 
 Known quirks in the `mm11_*` files (not sdfio bugs):

@@ -30,9 +30,9 @@ top of the API reference.
 :start-after: "License-Identifier"
 ```
 
-## Dialects and Data Types
+## Revisions and Data Types
 
-```{literalinclude} ../examples/04_dialects_and_data_types.py
+```{literalinclude} ../examples/04_revisions_and_data_types.py
 :language: python
 :start-after: "License-Identifier"
 ```

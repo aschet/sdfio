@@ -18,4 +18,4 @@ class SdfFormatError(SdfError):
 
 
 class SdfVersionError(SdfFormatError):
-    """Raised when an SDF dialect string is not recognized."""
+    """Raised when an SDF revision string is not recognized."""

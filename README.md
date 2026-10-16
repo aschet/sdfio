@@ -15,7 +15,7 @@ compact binary format. It is used as a software measurement standard
 instruments, and is also used more generally as a surface topography
 interchange format.
 
-Supported dialects: ISO-1.0, ISO-2.0, and BCR-1.0 (the
+Supported revisions: ISO-1.0, ISO-2.0, and BCR-1.0 (the
 pre-standardization proposal this format is based on), without
 compression or checksummed data areas. Vendor-specific extensions are not
 supported.
@@ -60,7 +60,7 @@ data type's reserved sentinel value in binary files) are represented as
 
 The trailer (record 3) holds free-form historical information, such as an
 operator name; ISO-2.0 requires it to use the same tagged `Name = Value`
-format as the header, which other dialects don't. `sdf.trailer_fields` reads
+format as the header, which other revisions don't. `sdf.trailer_fields` reads
 and writes it as a dict in that format either way:
 
 ```python
@@ -113,9 +113,9 @@ sdfio convert -t int16 surface.sdf surface_int16.sdf
 ```
 
 `convert` can change the ASCII/binary format (`-f`/`--format`), the SDF
-dialect and version (`-d`/`--dialect`, e.g. `ISO-2.0` or `BCR-1.0`), and the
+revision (`-d`/`--revision`, e.g. `ISO-2.0` or `BCR-1.0`), and the
 data area storage type (`-t`/`--type`) independently; any not given are kept
-from the source file. Converting to a dialect whose trailer requirements the
+from the source file. Converting to a revision whose trailer requirements the
 source file doesn't meet fails unless `-x`/`--fix-trailer` is passed to clean
 it up instead. Run `sdfio convert --help` for details. The CLI is also
 runnable as `python -m sdfio`.

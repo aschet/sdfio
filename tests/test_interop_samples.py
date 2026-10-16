@@ -18,7 +18,7 @@ import numpy as np
 import pytest
 
 import sdfio
-from sdfio.header import SdfDialect
+from sdfio.header import Revision
 
 SAMPLES_DIR = Path(__file__).parent / "interop_samples"
 NUM_PROFILES, NUM_POINTS = 20, 30
@@ -33,15 +33,15 @@ def _expected_data() -> np.ndarray:
     return data
 
 
-def _expected_dialect(path: Path) -> SdfDialect:
-    return SdfDialect.ISO_1_0 if "_iso1_" in path.name else SdfDialect.ISO_2_0
+def _expected_revision(path: Path) -> Revision:
+    return Revision.ISO_1_0 if "_iso1_" in path.name else Revision.ISO_2_0
 
 
 @pytest.mark.parametrize("path", MM11_FILES, ids=lambda p: p.name)
 def test_mm11_export_matches_input_data(path: Path) -> None:
     """Check the re-export is still the same asymmetric ramp and landmark NaN sdfio wrote.
 
-    Regardless of dialect, format, or data type -- catching an orientation
+    Regardless of revision, format, or data type -- catching an orientation
     or transform bug a sdfio-generated-only fixture structurally can't.
     """
     sdf = sdfio.read(path)
@@ -53,7 +53,7 @@ def test_mm11_export_matches_input_data(path: Path) -> None:
     # precision limit (15 significant digits vs. the 17 a double needs) is
     # an absolute few femto-units here, not a fraction of each value.
     np.testing.assert_allclose(sdf.data, expected, atol=1e-13, equal_nan=True)
-    assert sdf.header.dialect == _expected_dialect(path)
+    assert sdf.header.revision == _expected_revision(path)
     assert not sdf.trailer  # this exporter doesn't write one, see the README
 
 

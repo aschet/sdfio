@@ -17,7 +17,7 @@ from .exceptions import SdfError, SdfFormatError
 from .file import read
 from .header import (
     FileFormat,
-    SdfDialect,
+    Revision,
     format_tagged_fields,
     parse_tagged_fields,
     sanitize_tagged_fields,
@@ -28,12 +28,12 @@ from .header import (
 __all__ = ["main"]
 
 
-def _parse_dialect(value: str) -> SdfDialect:
+def _parse_revision(value: str) -> Revision:
     try:
-        return SdfDialect(value)
+        return Revision(value)
     except ValueError:
         raise argparse.ArgumentTypeError(
-            f"invalid dialect {value!r}, expected one of {', '.join(str(d) for d in SdfDialect)}"
+            f"invalid revision {value!r}, expected one of {', '.join(str(d) for d in Revision)}"
         ) from None
 
 
@@ -49,7 +49,7 @@ def _build_parser() -> argparse.ArgumentParser:
     info_parser.add_argument("path")
 
     convert_parser = subparsers.add_parser(
-        "convert", help="convert SDF format, dialect and/or data type"
+        "convert", help="convert SDF format, revision and/or data type"
     )
     convert_parser.add_argument("source")
     convert_parser.add_argument("destination")
@@ -61,10 +61,10 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     convert_parser.add_argument(
         "-d",
-        "--dialect",
-        type=_parse_dialect,
-        metavar="{" + ",".join(str(d) for d in SdfDialect) + "}",
-        help="convert to a different SDF dialect and version, e.g. ISO-2.0 or BCR-1.0",
+        "--revision",
+        type=_parse_revision,
+        metavar="{" + ",".join(str(d) for d in Revision) + "}",
+        help="convert to a different SDF revision, e.g. ISO-2.0 or BCR-1.0",
     )
     convert_parser.add_argument(
         "-t",
@@ -77,7 +77,7 @@ def _build_parser() -> argparse.ArgumentParser:
         "-x",
         "--fix-trailer",
         action="store_true",
-        help="if the trailer isn't valid for --dialect, fix it instead of failing",
+        help="if the trailer isn't valid for --revision, fix it instead of failing",
     )
 
     return parser
@@ -90,12 +90,12 @@ def _ascii_safe(text: str) -> str:
     return "".join(char if char.isascii() else "?" for char in text)
 
 
-def _fix_trailer(text: str, dialect: SdfDialect) -> str:
+def _fix_trailer(text: str, revision: Revision) -> str:
     # ISO-2.0 requires the tagged "Name = Value" shape, so salvage by shape
-    # first, then make any surviving field 7-bit ASCII. Other dialects have
+    # first, then make any surviving field 7-bit ASCII. Other revisions have
     # no shape requirement at all -- imposing one would destroy legitimate
     # freeform content, so only ASCII-ness is fixed, line by line.
-    if dialect.requires_tagged_trailer:
+    if revision.requires_tagged_trailer:
         fields = {
             _ascii_safe(name): _ascii_safe(value)
             for name, value in parse_tagged_fields(sanitize_tagged_fields(text)).items()
@@ -119,7 +119,7 @@ def _print_info(path: str) -> None:
     header = sdf.header
     fields = (
         ("Format", "binary" if header.format is FileFormat.BINARY else "ASCII"),
-        ("Dialect", header.dialect),
+        ("Revision", header.revision),
         ("ManufacID", header.manufacturer_id),
         ("CreateDate", _local_time(header.create_date)),
         ("ModDate", _local_time(header.mod_date)),
@@ -156,14 +156,14 @@ def main(argv: Sequence[str] | None = None) -> int:
             return 0
         if args.command == "convert":
             sdf = read(args.source)
-            target_dialect = args.dialect if args.dialect is not None else sdf.header.dialect
+            target_revision = args.revision if args.revision is not None else sdf.header.revision
             data_type = DataType[args.data_type.upper()] if args.data_type is not None else None
-            if target_dialect != sdf.header.dialect or data_type is not None:
+            if target_revision != sdf.header.revision or data_type is not None:
                 trailer = None
                 if args.fix_trailer:
                     try:
                         validate_trailer_ascii(sdf.trailer)
-                        validate_trailer_tagged(target_dialect, sdf.trailer)
+                        validate_trailer_tagged(target_revision, sdf.trailer)
                     except SdfFormatError:
                         source_trailer = sdf.trailer
                         text = (
@@ -171,8 +171,8 @@ def main(argv: Sequence[str] | None = None) -> int:
                             if isinstance(source_trailer, str)
                             else source_trailer.decode("ascii", errors="replace")
                         )
-                        trailer = _fix_trailer(text, target_dialect)
-                sdf = sdf.with_dialect(target_dialect, data_type=data_type, trailer=trailer)
+                        trailer = _fix_trailer(text, target_revision)
+                sdf = sdf.with_revision(target_revision, data_type=data_type, trailer=trailer)
             file_format = FileFormat[args.format.upper()] if args.format is not None else None
             sdf.save(args.destination, format=file_format)
             return 0

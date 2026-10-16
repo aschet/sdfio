@@ -36,9 +36,9 @@ header = dataclasses.replace(
 coarse = sdfio.SdfFile(header=header, data=sdf.data[:, ::2].copy(), trailer=sdf.trailer)
 print("coarse:", coarse.data.shape, "step:", coarse.header.x_scale)
 
-# The data type is changed with ``with_dialect``, which is given the dialect of the file itself.
+# The data type is changed with ``with_revision``, which is given the revision of the file itself.
 # The scale has to fit the new type.
-retyped = coarse.with_dialect(coarse.header.dialect, data_type=sdfio.DataType.INT32)
+retyped = coarse.with_revision(coarse.header.revision, data_type=sdfio.DataType.INT32)
 retyped.header.z_scale = sdfio.suggest_z_scale(
     coarse.data, sdfio.get_data_type(sdfio.DataType.INT32)
 )

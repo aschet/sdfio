@@ -9,7 +9,7 @@ from pathlib import Path
 
 import sdfio
 
-# The sample files of the repository, of each dialect and in both representations; use the paths
+# The sample files of the repository, of each revision and in both representations; use the paths
 # of your own files instead.
 SAMPLES = Path(__file__).resolve().parent.parent / "tests" / "samples"
 paths = [
@@ -19,12 +19,12 @@ paths = [
     SAMPLES / "bcr-1.0" / "bcr1_surface_uint16_ascii.sdf",
 ]
 
-# ``read`` takes a path or an open file, and finds the dialect and the representation by itself.
+# ``read`` takes a path or an open file, and finds the revision and the representation by itself.
 for path in paths:
     sdf = sdfio.read(path)
     kind = "profile" if sdf.header.num_profiles == 1 else "surface"
     print(
-        f"{path.name}: {kind}, {sdf.header.dialect}, "
+        f"{path.name}: {kind}, {sdf.header.revision}, "
         f"{sdf.header.format.name.lower()}, {sdf.data_type.name}, {sdf.data.shape}"
     )
 

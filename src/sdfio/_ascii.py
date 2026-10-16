@@ -13,14 +13,14 @@ from typing import IO
 import numpy as np
 
 from ._numeric import format_scientific
-from .datatypes import DataType, SdfDataType, require_supported_data_type, validate_data_range
+from .datatypes import DataType, DataTypeInfo, require_supported_data_type, validate_data_range
 from .exceptions import SdfFormatError
 from .header import (
     ASCII_PREFIX,
     BINARY_PREFIX,
     FileFormat,
-    SdfDialect,
-    SdfHeader,
+    Header,
+    Revision,
     format_sdf_datetime,
     parse_sdf_datetime,
     parse_tagged_fields,
@@ -36,7 +36,7 @@ __all__ = ["dump", "dumps", "load", "loads"]
 
 _MAGIC_RE = re.compile(
     rf"^(?P<prefix>[{ASCII_PREFIX}{BINARY_PREFIX}{ASCII_PREFIX.upper()}{BINARY_PREFIX.upper()}])"
-    rf"(?P<dialect>[A-Z]{{3}})-(?P<version>\d\.\d)$"
+    rf"(?P<family>[A-Z]{{3}})-(?P<version>\d\.\d)$"
 )
 #: The literal that marks a point that is not measured, which is what is written.
 _INVALID_MARKER = "BAD"
@@ -77,7 +77,7 @@ def _strip_comment(line: str) -> str:
     return line.split(_COMMENT_MARKER, 1)[0]
 
 
-def _split_records(remainder: str, dialect: SdfDialect) -> list[str]:
+def _split_records(remainder: str, revision: Revision) -> list[str]:
     # Splitting by matching the "*" delimiter together with its surrounding
     # newlines (as one combined pattern) can't tell two delimiters directly
     # adjacent to each other (an explicit empty record, e.g. an empty
@@ -88,7 +88,7 @@ def _split_records(remainder: str, dialect: SdfDialect) -> list[str]:
     # With comments enabled, a "*" followed by a comment still terminates its
     # record, and the comment is dropped from the header and data records. The
     # trailer (third record) is free text, so it is kept verbatim.
-    comments = dialect.allows_ascii_comments
+    comments = revision.allows_ascii_comments
     records = []
     current: list[str] = []
     for line in _LINE_SPLIT_RE.split(remainder):
@@ -120,13 +120,13 @@ def _parse_int(fields: Mapping[str, str], name: str) -> int:
 
 
 def _parse_coded(
-    fields: Mapping[str, str], name: str, dialect: SdfDialect, symbols: Mapping[str, int]
+    fields: Mapping[str, str], name: str, revision: Revision, symbols: Mapping[str, int]
 ) -> int:
     value = _field(fields, name)
     try:
         return int(value)
     except ValueError:
-        if dialect.allows_symbolic_header_values and value.upper() in symbols:
+        if revision.allows_symbolic_header_values and value.upper() in symbols:
             return int(symbols[value.upper()])
         raise SdfFormatError(
             f"Invalid integer value for SDF header field {name!r}: {value!r}"
@@ -143,7 +143,7 @@ def _parse_float(fields: Mapping[str, str], name: str) -> float:
         ) from None
 
 
-def loads(text: str) -> tuple[SdfHeader, np.ndarray, str]:
+def loads(text: str) -> tuple[Header, np.ndarray, str]:
     """Parse an in-memory ASCII SDF document.
 
     :param text: Full contents of an ASCII-encoded ``.sdf`` file.
@@ -151,7 +151,7 @@ def loads(text: str) -> tuple[SdfHeader, np.ndarray, str]:
         ``(num_profiles, num_points)`` array of height values in metres,
         with ``NaN`` marking non-measured or spurious points.
     :raises SdfFormatError: If the file is malformed, e.g. a bad magic,
-        unsupported dialect or data type, or missing records. The trailer is
+        unsupported revision or data type, or missing records. The trailer is
         not validated on read; it is returned as-is even if not 7-bit ASCII
         (any non-ASCII byte was already replaced during decoding, per
         ``errors="replace"`` in :meth:`SdfFile.loads`).
@@ -168,13 +168,13 @@ def loads(text: str) -> tuple[SdfHeader, np.ndarray, str]:
         raise SdfFormatError(f"Not an ASCII SDF file, unexpected magic: {magic_line!r}")
     if magic_match.group("prefix").lower() != ASCII_PREFIX:
         raise SdfFormatError("Binary magic found while parsing an ASCII SDF file")
-    dialect_text = magic_match.group("dialect")
+    family_text = magic_match.group("family")
     version_text = magic_match.group("version")
-    dialect = SdfDialect.resolve(dialect_text, version_text, magic_line)
-    if _COMMENT_MARKER in magic_line and not dialect.allows_ascii_comments:
+    revision = Revision.resolve(family_text, version_text, magic_line)
+    if _COMMENT_MARKER in magic_line and not revision.allows_ascii_comments:
         raise SdfFormatError(f"Not an ASCII SDF file, unexpected magic: {magic_line!r}")
 
-    records = _split_records(remainder, dialect)
+    records = _split_records(remainder, revision)
     if len(records) < 3:
         raise SdfFormatError("SDF file must contain header, data and trailer records")
     # The trailer is itself terminated by its own "*" record; drop
@@ -185,17 +185,17 @@ def loads(text: str) -> tuple[SdfHeader, np.ndarray, str]:
     trailer_text = "*".join(trailer_parts)
 
     fields = parse_tagged_fields(header_text)
-    data_type_code = _parse_coded(fields, "DataType", dialect, _BCR_DATA_TYPE_NAMES)
-    data_type = require_supported_data_type(data_type_code, dialect)
-    validate_compression(_parse_coded(fields, "Compression", dialect, _BCR_COMPRESSION_NAMES))
-    validate_check_type(_parse_coded(fields, "CheckType", dialect, _BCR_CHECK_TYPE_NAMES))
+    data_type_code = _parse_coded(fields, "DataType", revision, _BCR_DATA_TYPE_NAMES)
+    data_type = require_supported_data_type(data_type_code, revision)
+    validate_compression(_parse_coded(fields, "Compression", revision, _BCR_COMPRESSION_NAMES))
+    validate_check_type(_parse_coded(fields, "CheckType", revision, _BCR_CHECK_TYPE_NAMES))
 
-    header = SdfHeader(
-        dialect=dialect,
+    header = Header(
+        revision=revision,
         format=FileFormat.ASCII,
         manufacturer_id=_field(fields, "ManufacID").strip(),
-        create_date=parse_sdf_datetime(_field(fields, "CreateDate"), dialect),
-        mod_date=parse_sdf_datetime(_field(fields, "ModDate"), dialect),
+        create_date=parse_sdf_datetime(_field(fields, "CreateDate"), revision),
+        mod_date=parse_sdf_datetime(_field(fields, "ModDate"), revision),
         num_points=_parse_int(fields, "NumPoints"),
         num_profiles=_parse_int(fields, "NumProfiles"),
         x_scale=_parse_float(fields, "Xscale"),
@@ -214,7 +214,7 @@ def loads(text: str) -> tuple[SdfHeader, np.ndarray, str]:
     return header, data, trailer
 
 
-def _parse_data(data_text: str, header: SdfHeader, data_type: SdfDataType) -> np.ndarray:
+def _parse_data(data_text: str, header: Header, data_type: DataTypeInfo) -> np.ndarray:
     tokens = data_text.split()
     expected = header.num_points * header.num_profiles
     if len(tokens) != expected:
@@ -238,17 +238,17 @@ def _parse_data(data_text: str, header: SdfHeader, data_type: SdfDataType) -> np
                 raise SdfFormatError(f"Invalid data value at position {index}: {token!r}") from None
 
     invalid_mask = np.isnan(values)
-    if not header.dialect.has_ascii_invalid_token:
+    if not header.revision.has_ascii_invalid_token:
         # BCR marks a bad point with the type's maximum value, as a number.
-        invalid_mask |= data_type.is_invalid(values, header.dialect)
+        invalid_mask |= data_type.is_invalid(values, header.revision)
     # NaN before scaling: a huge marker value could overflow when scaled.
     values[invalid_mask] = np.nan
     with np.errstate(invalid="ignore", over="ignore"):  # see decode_raw
         data = (values * header.z_scale).reshape(header.num_profiles, header.num_points)
-    return data[::-1] if header.dialect.reverses_profile_order else data
+    return data[::-1] if header.revision.reverses_profile_order else data
 
 
-def load(fp: IO[str]) -> tuple[SdfHeader, np.ndarray, str]:
+def load(fp: IO[str]) -> tuple[Header, np.ndarray, str]:
     """Parse an ASCII SDF file object opened in text mode.
 
     Equivalent to :func:`loads`, reading the text from ``fp`` first.
@@ -256,11 +256,11 @@ def load(fp: IO[str]) -> tuple[SdfHeader, np.ndarray, str]:
     return loads(fp.read())
 
 
-def _format_value(value: float, data_type: SdfDataType, dialect: SdfDialect) -> str:
+def _format_value(value: float, data_type: DataTypeInfo, revision: Revision) -> str:
     if np.isnan(value):
-        if dialect.has_ascii_invalid_token:
+        if revision.has_ascii_invalid_token:
             return _INVALID_MARKER
-        value = data_type.ascii_invalid_value(dialect)
+        value = data_type.ascii_invalid_value(revision)
     if data_type.type == DataType.BINARY32:
         return format_scientific(value, 6, 2)
     if data_type.type == DataType.BINARY64:
@@ -268,7 +268,7 @@ def _format_value(value: float, data_type: SdfDataType, dialect: SdfDialect) -> 
     return str(round(value))
 
 
-def dumps(header: SdfHeader, data: np.ndarray, trailer: str = "") -> str:
+def dumps(header: Header, data: np.ndarray, trailer: str = "") -> str:
     """Serialize a header/data pair to the ASCII SDF text representation.
 
     :param header: Header describing ``data``; ``header.format`` is ignored.
@@ -287,33 +287,33 @@ def dumps(header: SdfHeader, data: np.ndarray, trailer: str = "") -> str:
     validate_z_scale(header.z_scale)
     validate_manufacturer_id_ascii(header.manufacturer_id)
     validate_trailer_ascii(trailer)
-    validate_trailer_tagged(header.dialect, trailer)
-    data_type = require_supported_data_type(header.data_type, header.dialect)
+    validate_trailer_tagged(header.revision, trailer)
+    data_type = require_supported_data_type(header.data_type, header.revision)
 
-    lines = [f"{ASCII_PREFIX}{header.dialect}"]
+    lines = [f"{ASCII_PREFIX}{header.revision}"]
     fields = (
         ("ManufacID", header.manufacturer_id),
-        ("CreateDate", format_sdf_datetime(header.create_date, header.dialect)),
-        ("ModDate", format_sdf_datetime(header.mod_date, header.dialect)),
+        ("CreateDate", format_sdf_datetime(header.create_date, header.revision)),
+        ("ModDate", format_sdf_datetime(header.mod_date, header.revision)),
         ("NumPoints", str(header.num_points)),
         ("NumProfiles", str(header.num_profiles)),
         ("Xscale", _format_scale_field(header.x_scale)),
         ("Yscale", _format_scale_field(header.y_scale)),
         ("Zscale", _format_scale_field(header.z_scale)),
         ("Zresolution", _format_scale_field(header.z_resolution)),
-        ("Compression", "0"),  # Never supported, see SdfHeader's docstring.
+        ("Compression", "0"),  # Never supported, see Header's docstring.
         ("DataType", str(header.data_type)),
-        ("CheckType", "0"),  # Never written, see SdfHeader's docstring.
+        ("CheckType", "0"),  # Never written, see Header's docstring.
     )
     for name, value in fields:
         lines.append(f"{name} = {value}")
     lines.append("*")
 
-    write_data = data[::-1] if header.dialect.reverses_profile_order else data
+    write_data = data[::-1] if header.revision.reverses_profile_order else data
     raw = write_data / header.z_scale
-    validate_data_range(raw, np.isnan(write_data), data_type, header.dialect)
+    validate_data_range(raw, np.isnan(write_data), data_type, header.revision)
     for row in raw:
-        lines.append(" ".join(_format_value(value, data_type, header.dialect) for value in row))
+        lines.append(" ".join(_format_value(value, data_type, header.revision) for value in row))
     lines.append("*")
 
     # The standard doesn't unambiguously specify how a missing/empty
@@ -331,7 +331,7 @@ def dumps(header: SdfHeader, data: np.ndarray, trailer: str = "") -> str:
     return "\r\n".join(lines) + "\r\n"
 
 
-def dump(header: SdfHeader, data: np.ndarray, fp: IO[str], trailer: str = "") -> None:
+def dump(header: Header, data: np.ndarray, fp: IO[str], trailer: str = "") -> None:
     """Serialize a header/data pair as ASCII SDF text to a file object.
 
     Equivalent to :func:`dumps`, writing the result to ``fp``.

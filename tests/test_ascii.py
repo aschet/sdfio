@@ -15,7 +15,7 @@ import pytest
 from sdfio import _ascii
 from sdfio.datatypes import DataType
 from sdfio.exceptions import SdfFormatError
-from sdfio.header import FileFormat, SdfDialect, SdfHeader
+from sdfio.header import FileFormat, Header, Revision
 
 # Adapted from the standard's own worked example, using a small, fully
 # specified 2x3 grid (the original elides most values with "......").
@@ -44,7 +44,7 @@ ISO_ANNEX_A_EXAMPLE = (
 
 def test_loads_parses_header() -> None:
     header, _data, _trailer = _ascii.loads(ISO_ANNEX_A_EXAMPLE)
-    assert header.dialect == SdfDialect.ISO_2_0
+    assert header.revision == Revision.ISO_2_0
     assert header.format is FileFormat.ASCII
     assert header.manufacturer_id == "ISOTC213"
     assert header.num_points == 3
@@ -119,10 +119,10 @@ def test_loads_rejects_invalid_data_value() -> None:
         _ascii.loads(bad)
 
 
-def test_loads_rejects_unsupported_data_type_for_dialect() -> None:
+def test_loads_rejects_unsupported_data_type_for_revision() -> None:
     # binary32 (code 3) is only valid for ISO-2.0/BCR-1.0.
     bad = ISO_ANNEX_A_EXAMPLE.replace("aISO-2.0", "aISO-1.0")
-    with pytest.raises(SdfFormatError, match="not valid for SDF dialect"):
+    with pytest.raises(SdfFormatError, match="not valid for SDF revision"):
         _ascii.loads(bad)
 
 
@@ -169,37 +169,37 @@ def test_load_reads_from_file_object() -> None:
 
 
 def test_dumps_rejects_out_of_range_integer_value() -> None:
-    header = SdfHeader(num_points=1, num_profiles=1, z_scale=1.0, data_type=4)  # int8
+    header = Header(num_points=1, num_profiles=1, z_scale=1.0, data_type=4)  # int8
     with pytest.raises(SdfFormatError, match="out of range"):
         _ascii.dumps(header, np.array([[1000.0]]))
 
 
 def test_dumps_rejects_sentinel_collision() -> None:
-    header = SdfHeader(num_points=1, num_profiles=1, z_scale=1.0, data_type=4)  # int8
+    header = Header(num_points=1, num_profiles=1, z_scale=1.0, data_type=4)  # int8
     with pytest.raises(SdfFormatError, match="invalid-point sentinel"):
         _ascii.dumps(header, np.array([[-128.0]]))
 
 
 def test_dumps_rejects_malformed_v2_trailer() -> None:
-    header = SdfHeader(dialect=SdfDialect.ISO_2_0, num_points=1, num_profiles=1, data_type=7)
+    header = Header(revision=Revision.ISO_2_0, num_points=1, num_profiles=1, data_type=7)
     with pytest.raises(SdfFormatError, match="tagged 'Name = Value' format"):
         _ascii.dumps(header, np.zeros((1, 1)), trailer="not tagged fields")
 
 
 def test_dumps_allows_tagged_v2_trailer() -> None:
-    header = SdfHeader(dialect=SdfDialect.ISO_2_0, num_points=1, num_profiles=1, data_type=7)
+    header = Header(revision=Revision.ISO_2_0, num_points=1, num_profiles=1, data_type=7)
     _ascii.dumps(header, np.zeros((1, 1)), trailer="Note = hello")
 
 
 def test_dumps_allows_empty_v2_trailer() -> None:
-    header = SdfHeader(dialect=SdfDialect.ISO_2_0, num_points=1, num_profiles=1, data_type=7)
+    header = Header(revision=Revision.ISO_2_0, num_points=1, num_profiles=1, data_type=7)
     _ascii.dumps(header, np.zeros((1, 1)), trailer="")
 
 
 def test_dumps_loads_roundtrips_empty_trailer_as_empty_string() -> None:
     # dumps() always terminates the trailer record, even when empty -- this
     # produces two adjacent "*" markers with nothing between them.
-    header = SdfHeader(dialect=SdfDialect.ISO_2_0, num_points=1, num_profiles=1, data_type=7)
+    header = Header(revision=Revision.ISO_2_0, num_points=1, num_profiles=1, data_type=7)
     text = _ascii.dumps(header, np.zeros((1, 1)), trailer="")
     assert text.endswith("*\r\n*\r\n")
     _header, _data, trailer = _ascii.loads(text)
@@ -208,31 +208,31 @@ def test_dumps_loads_roundtrips_empty_trailer_as_empty_string() -> None:
 
 def test_dumps_does_not_insert_blank_line_for_crlf_terminated_trailer() -> None:
     """A trailer that already ends in its own line terminator must not get a doubled one."""
-    header = SdfHeader(dialect=SdfDialect.ISO_2_0, num_points=1, num_profiles=1, data_type=7)
+    header = Header(revision=Revision.ISO_2_0, num_points=1, num_profiles=1, data_type=7)
     text = _ascii.dumps(header, np.zeros((1, 1)), trailer="OperatorName = Jane Doe\r\n")
     assert text.endswith("OperatorName = Jane Doe\r\n*\r\n")
 
 
 def test_dumps_v1_trailer_need_not_be_xml() -> None:
-    header = SdfHeader(dialect=SdfDialect.ISO_1_0, num_points=1, num_profiles=1, data_type=7)
+    header = Header(revision=Revision.ISO_1_0, num_points=1, num_profiles=1, data_type=7)
     _ascii.dumps(header, np.zeros((1, 1)), trailer="Operator = Jane Doe")
 
 
 def test_dumps_rejects_non_ascii_trailer() -> None:
-    header = SdfHeader(num_points=1, num_profiles=1, data_type=7)
+    header = Header(num_points=1, num_profiles=1, data_type=7)
     with pytest.raises(SdfFormatError, match="must be 7-bit ASCII"):
         _ascii.dumps(header, np.zeros((1, 1)), trailer="Müller café")
 
 
 def test_dumps_rejects_non_ascii_manufacturer_id() -> None:
-    header = SdfHeader(num_points=1, num_profiles=1, data_type=7, manufacturer_id="Müller")
+    header = Header(num_points=1, num_profiles=1, data_type=7, manufacturer_id="Müller")
     with pytest.raises(SdfFormatError, match="manufacturer_id must be 7-bit ASCII"):
         _ascii.dumps(header, np.zeros((1, 1)))
 
 
 def test_loads_returns_non_ascii_trailer_as_is() -> None:
     """A non-compliant trailer must not prevent reading the (already-parsed) depth data."""
-    header = SdfHeader(num_points=1, num_profiles=1, data_type=7)
+    header = Header(num_points=1, num_profiles=1, data_type=7)
     # dumps() itself always terminates the (here, empty) trailer; replace
     # that terminator to simulate a non-compliant trailer added after the fact.
     text = _ascii.dumps(header, np.zeros((1, 1)))
@@ -247,8 +247,8 @@ def test_loads_returns_non_ascii_trailer_as_is() -> None:
 
 def test_dumps_roundtrips_loads() -> None:
     data = np.array([[1e-6, np.nan, -2.5e-6], [0.0, 3.14159e-6, 1.0e-6]])
-    header = SdfHeader(
-        dialect=SdfDialect.ISO_2_0,
+    header = Header(
+        revision=Revision.ISO_2_0,
         num_points=3,
         num_profiles=2,
         x_scale=1e-6,
@@ -266,28 +266,28 @@ def test_dumps_roundtrips_loads() -> None:
 
 def test_dumps_roundtrips_integer_data_type() -> None:
     data = np.array([[1e-6, np.nan], [-2e-6, 0.0]])
-    header = SdfHeader(num_points=2, num_profiles=2, z_scale=1e-6, data_type=6)
+    header = Header(num_points=2, num_profiles=2, z_scale=1e-6, data_type=6)
     text = _ascii.dumps(header, data)
     _header, round_tripped_data, _trailer = _ascii.loads(text)
     np.testing.assert_allclose(round_tripped_data, data, rtol=1e-9, equal_nan=True)
 
 
 def test_dump_writes_to_file_object() -> None:
-    header = SdfHeader(num_points=1, num_profiles=1, data_type=7)
+    header = Header(num_points=1, num_profiles=1, data_type=7)
     fp = io.StringIO()
     _ascii.dump(header, np.zeros((1, 1)), fp)
     assert fp.getvalue().startswith("aISO-2.0")
 
 
 def test_dumps_rejects_shape_mismatch() -> None:
-    header = SdfHeader(num_points=2, num_profiles=2)
+    header = Header(num_points=2, num_profiles=2)
     with pytest.raises(SdfFormatError, match="does not match header shape"):
         _ascii.dumps(header, np.zeros((3, 3)))
 
 
-def test_dumps_loads_roundtrip_bcr_dialect() -> None:
-    header = SdfHeader(
-        dialect=SdfDialect.BCR_1_0,
+def test_dumps_loads_roundtrip_bcr_revision() -> None:
+    header = Header(
+        revision=Revision.BCR_1_0,
         num_points=2,
         num_profiles=1,
         z_scale=1e-6,
@@ -298,19 +298,19 @@ def test_dumps_loads_roundtrip_bcr_dialect() -> None:
     assert text.startswith("aBCR-1.0")
 
     round_tripped_header, round_tripped_data, _trailer = _ascii.loads(text)
-    assert round_tripped_header.dialect == SdfDialect.BCR_1_0
+    assert round_tripped_header.revision == Revision.BCR_1_0
     np.testing.assert_allclose(round_tripped_data, data, rtol=1e-6)
 
 
 def test_dumps_reverses_profile_order_for_bcr_on_disk() -> None:
     # Each row has a distinct value so the on-disk row order is directly
-    # observable, independent of the dialect-aware unflipping loads() does.
+    # observable, independent of the revision-aware unflipping loads() does.
     data = np.array([[0.0], [1.0], [2.0], [3.0]])
-    iso_header = SdfHeader(
-        dialect=SdfDialect.ISO_1_0, num_points=1, num_profiles=4, z_scale=1.0, data_type=7
+    iso_header = Header(
+        revision=Revision.ISO_1_0, num_points=1, num_profiles=4, z_scale=1.0, data_type=7
     )
-    bcr_header = SdfHeader(
-        dialect=SdfDialect.BCR_1_0, num_points=1, num_profiles=4, z_scale=1.0, data_type=7
+    bcr_header = Header(
+        revision=Revision.BCR_1_0, num_points=1, num_profiles=4, z_scale=1.0, data_type=7
     )
 
     iso_text = _ascii.dumps(iso_header, data)
@@ -330,7 +330,7 @@ def test_dumps_reverses_profile_order_for_bcr_on_disk() -> None:
 
 
 def test_dumps_loads_roundtrip_none_dates() -> None:
-    header = SdfHeader(num_points=1, num_profiles=1, data_type=7, create_date=None, mod_date=None)
+    header = Header(num_points=1, num_profiles=1, data_type=7, create_date=None, mod_date=None)
     text = _ascii.dumps(header, np.zeros((1, 1)))
     assert "CreateDate = 000000000000" in text
 
@@ -339,9 +339,9 @@ def test_dumps_loads_roundtrip_none_dates() -> None:
     assert round_tripped_header.mod_date is None
 
 
-def test_loads_rejects_unknown_dialect() -> None:
+def test_loads_rejects_unknown_revision() -> None:
     bad = ISO_ANNEX_A_EXAMPLE.replace("aISO-2.0", "aXYZ-2.0")
-    with pytest.raises(SdfFormatError, match="Unknown or unsupported SDF dialect"):
+    with pytest.raises(SdfFormatError, match="Unknown or unsupported SDF revision"):
         _ascii.loads(bad)
 
 
@@ -406,10 +406,10 @@ BCR_SPECIFICATION_EXAMPLE = (
 
 def test_loads_bcr_specification_example() -> None:
     header, data, trailer = _ascii.loads(BCR_SPECIFICATION_EXAMPLE)
-    assert header.dialect == SdfDialect.BCR_1_0
+    assert header.revision == Revision.BCR_1_0
     assert header.manufacturer_id == "XYZ/T52"
     assert header.create_date is not None
-    # An ISO-1.0-like dialect stores local time; the date is held as UTC.
+    # An ISO-1.0-like revision stores local time; the date is held as UTC.
     assert header.create_date.astimezone().strftime("%d%m%Y%H%M") == "040519931442"
     assert header.data_type == DataType.INT16  # "DataType =5"
     assert header.z_scale == pytest.approx(6.2564e-10)
@@ -449,7 +449,7 @@ def test_loads_bcr_accepts_symbolic_data_type(name: str, code: DataType) -> None
 def test_loads_bcr_accepts_any_spelling_of_none(none: str) -> None:
     # The specification's own example uses NULL and notes "or 0" for the same value.
     header, _data, _trailer = _ascii.loads(BCR_SPECIFICATION_EXAMPLE.replace("NULL", none))
-    assert header.dialect == SdfDialect.BCR_1_0
+    assert header.revision == Revision.BCR_1_0
 
 
 @pytest.mark.parametrize(
@@ -527,8 +527,8 @@ def test_loads_iso_does_not_treat_numbers_as_bad_data() -> None:
 
 @pytest.mark.parametrize("data_type", [DataType.INT16, DataType.BINARY32, DataType.BINARY64])
 def test_dumps_bcr_writes_bad_data_as_number_not_token(data_type: DataType) -> None:
-    header = SdfHeader(
-        dialect=SdfDialect.BCR_1_0,
+    header = Header(
+        revision=Revision.BCR_1_0,
         num_points=2,
         num_profiles=1,
         z_scale=1.0,
@@ -539,7 +539,7 @@ def test_dumps_bcr_writes_bad_data_as_number_not_token(data_type: DataType) -> N
     _header, data, _trailer = _ascii.loads(text)
     np.testing.assert_array_equal(np.isnan(data), [[False, True]])
     # ISO keeps the BAD token.
-    iso_text = _ascii.dumps(replace(header, dialect=SdfDialect.ISO_2_0), np.array([[1.0, np.nan]]))
+    iso_text = _ascii.dumps(replace(header, revision=Revision.ISO_2_0), np.array([[1.0, np.nan]]))
     assert "BAD" in iso_text
 
 
@@ -562,9 +562,9 @@ def test_an_ascii_z_scale_without_a_sensible_product_is_read_without_a_warning(
     assert header.num_points == 2
 
 
-def _ascii_with_tokens(dialect: SdfDialect, data_type: DataType, tokens: list[str]) -> str:
+def _ascii_with_tokens(revision: Revision, data_type: DataType, tokens: list[str]) -> str:
     return (
-        f"a{dialect}\r\n"
+        f"a{revision}\r\n"
         "ManufacID = sdfio\r\nCreateDate = 051020261200\r\nModDate = 051020261200\r\n"
         f"NumPoints = {len(tokens)}\r\nNumProfiles = 1\r\n"
         f"Xscale = 1e-6\r\nYscale = 1e-6\r\nZscale = 1e-9\r\nZresolution = -1\r\n"
@@ -576,16 +576,16 @@ def _ascii_with_tokens(dialect: SdfDialect, data_type: DataType, tokens: list[st
 
 @pytest.mark.parametrize("marker", ["BAD", "bad", "NaN", "nan", "NAN"])
 @pytest.mark.parametrize("data_type", [DataType.INT16, DataType.BINARY64])
-@pytest.mark.parametrize("dialect", list(SdfDialect))
+@pytest.mark.parametrize("revision", list(Revision))
 def test_the_text_nan_is_read_as_the_bad_marker_for_every_data_type(
-    dialect: SdfDialect, data_type: DataType, marker: str
+    revision: Revision, data_type: DataType, marker: str
 ) -> None:
     values = ["10", marker, "30"] if data_type is DataType.INT16 else ["1.5", marker, "3.5"]
-    text = _ascii_with_tokens(dialect, data_type, values)
+    text = _ascii_with_tokens(revision, data_type, values)
 
     header, data, _ = _ascii.loads(text)
 
-    assert header.dialect is dialect
+    assert header.revision is revision
     assert data.shape == (1, 3)
     assert np.isnan(data).tolist() == [[False, True, False]]
     assert data[0, 0] == pytest.approx(float(values[0]) * header.z_scale)
@@ -593,7 +593,7 @@ def test_the_text_nan_is_read_as_the_bad_marker_for_every_data_type(
 
 
 def test_a_token_that_is_neither_a_number_nor_a_marker_is_still_rejected() -> None:
-    text = _ascii_with_tokens(SdfDialect.ISO_2_0, DataType.INT16, ["10", "NA", "30"])
+    text = _ascii_with_tokens(Revision.ISO_2_0, DataType.INT16, ["10", "NA", "30"])
 
     with pytest.raises(SdfFormatError, match="Invalid data value"):
         _ascii.loads(text)

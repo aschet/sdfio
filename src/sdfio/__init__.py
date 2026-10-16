@@ -47,13 +47,13 @@ A profile is a surface with one row::
     >>> sdfio.read(io.BytesIO(buffer.getvalue())).data.shape
     (1, 100)
 
-The file is described by the header. The dialect, the data type, the manufacturer, the dates and
+The file is described by the header. The revision, the data type, the manufacturer, the dates and
 the quantization step come from a template, and the representation from ``format``. The heights
 are stored as integers of ``data_type`` times ``z_scale``, which ``"auto"`` chooses as the
 smallest scale that fits the data::
 
-    >>> metadata = sdfio.SdfMetadata(
-    ...     dialect=sdfio.SdfDialect.ISO_2_0,
+    >>> metadata = sdfio.Metadata(
+    ...     revision=sdfio.Revision.ISO_2_0,
     ...     manufacturer_id="acme",
     ...     data_type=sdfio.DataType.INT16,
     ... )
@@ -73,11 +73,11 @@ The trailer holds free text, or "Name = Value" fields, which ISO-2.0 requires::
     >>> sdfio.read(io.BytesIO(sdf.dumps())).trailer_fields["OperatorName"]
     'Jane Doe'
 
-A file is converted to another dialect, data type or representation with
-:meth:`SdfFile.with_dialect` and :meth:`SdfFile.dumps`::
+A file is converted to another revision, data type or representation with
+:meth:`SdfFile.with_revision` and :meth:`SdfFile.dumps`::
 
-    >>> converted = sdf.with_dialect(sdfio.SdfDialect.ISO_1_0, trailer="")
-    >>> str(converted.header.dialect)
+    >>> converted = sdf.with_revision(sdfio.Revision.ISO_1_0, trailer="")
+    >>> str(converted.header.revision)
     'ISO-1.0'
     >>> binary = sdfio.read(io.BytesIO(converted.dumps(format=sdfio.FileFormat.BINARY)))
     >>> binary.header.format.name
@@ -101,7 +101,7 @@ from __future__ import annotations
 from .datatypes import (
     DATA_TYPES,
     DataType,
-    SdfDataType,
+    DataTypeInfo,
     decode_raw,
     encode_raw,
     get_data_type,
@@ -111,9 +111,9 @@ from .exceptions import SdfError, SdfFormatError, SdfVersionError
 from .file import FileFormat, SdfFile, read, write
 from .header import (
     MAGICS,
-    SdfDialect,
-    SdfHeader,
-    SdfMetadata,
+    Header,
+    Metadata,
+    Revision,
     format_tagged_fields,
     parse_tagged_fields,
     sanitize_tagged_fields,
@@ -125,14 +125,14 @@ __all__ = [
     "DATA_TYPES",
     "MAGICS",
     "DataType",
+    "DataTypeInfo",
     "FileFormat",
-    "SdfDataType",
-    "SdfDialect",
+    "Header",
+    "Metadata",
+    "Revision",
     "SdfError",
     "SdfFile",
     "SdfFormatError",
-    "SdfHeader",
-    "SdfMetadata",
     "SdfVersionError",
     "__version__",
     "decode_raw",

@@ -21,7 +21,7 @@ def test_there_is_an_example_for_each_topic() -> None:
         "01_surfaces",
         "02_profiles",
         "03_missing_points",
-        "04_dialects_and_data_types",
+        "04_revisions_and_data_types",
         "05_header_and_trailer",
         "06_reading_files",
         "07_modifying_values",

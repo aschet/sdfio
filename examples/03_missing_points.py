@@ -16,14 +16,14 @@ import sdfio
 heights = 1e-6 * np.random.default_rng(2).normal(size=(40, 60))
 heights[10:15, 20:30] = np.nan
 
-for dialect in (sdfio.SdfDialect.ISO_2_0, sdfio.SdfDialect.BCR_1_0):
-    metadata = sdfio.SdfMetadata(dialect=dialect, data_type=sdfio.DataType.INT16)
+for revision in (sdfio.Revision.ISO_2_0, sdfio.Revision.BCR_1_0):
+    metadata = sdfio.Metadata(revision=revision, data_type=sdfio.DataType.INT16)
     buffer = io.BytesIO()
     sdfio.write(buffer, heights, x_scale=1e-6, y_scale=1e-6, z_scale="auto", metadata=metadata)
     sdf = sdfio.read(io.BytesIO(buffer.getvalue()))
     raw = sdf.raw_data()
     bad = np.unique(raw[np.isnan(sdf.data)])
-    print(dialect, "stores the bad points as", bad.tolist(), "and reads them as NaN again")
+    print(revision, "stores the bad points as", bad.tolist(), "and reads them as NaN again")
     print("  missing points:", int(np.isnan(sdf.data).sum()))
 
 # In the ASCII representation of ISO the bad points are written as BAD.

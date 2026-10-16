@@ -21,9 +21,9 @@ __all__ = [
     "MAGIC_SIZE",
     "DataType",
     "FileFormat",
-    "SdfDialect",
-    "SdfHeader",
-    "SdfMetadata",
+    "Header",
+    "Metadata",
+    "Revision",
     "format_sdf_datetime",
     "format_tagged_fields",
     "parse_sdf_datetime",
@@ -52,13 +52,13 @@ class FileFormat(Enum):
     BINARY = auto()
 
 
-class SdfDialect(StrEnum):
-    """SDF dialect and version, as embedded verbatim in the file magic (e.g. ``aISO-2.0``).
+class Revision(StrEnum):
+    """Revision of the SDF format, as embedded verbatim in the file magic (e.g. ``aISO-2.0``).
 
     ``BCR`` is the pre-standardization proposal this format is based on;
     ``ISO`` is its standardized successor. BCR never had more than one
-    version. Members are named ``<DIALECT>_<VERSION>``; their string value
-    is the exact ``<DIALECT>-<VERSION>`` text written into the file magic.
+    version. Members are named ``<FAMILY>_<VERSION>``; their string value
+    is the exact ``<FAMILY>-<VERSION>`` text written into the file magic.
     """
 
     ISO_1_0 = "ISO-1.0"
@@ -66,24 +66,24 @@ class SdfDialect(StrEnum):
     BCR_1_0 = "BCR-1.0"
 
     @classmethod
-    def resolve(cls, dialect_text: str, version_text: str, magic: str) -> SdfDialect:
-        """Look up the dialect for a magic's separately-parsed dialect and version text.
+    def resolve(cls, family_text: str, version_text: str, magic: str) -> Revision:
+        """Look up the revision for a magic's separately-parsed family and version text.
 
         A small shared helper for the ASCII/binary readers, which each parse
         the magic's structure differently but need the same lookup and error
         message once they have the two pieces.
 
-        :param dialect_text: The magic's 3-letter dialect abbreviation (e.g. ``"ISO"``).
+        :param family_text: The magic's 3-letter family abbreviation (e.g. ``"ISO"``).
         :param version_text: The magic's version text (e.g. ``"2.0"``).
         :param magic: The full original magic text, used only for the error message.
-        :raises SdfFormatError: If ``dialect_text``/``version_text`` don't form
-            a known, valid dialect combination.
+        :raises SdfFormatError: If ``family_text``/``version_text`` don't form
+            a known, valid revision combination.
         """
         try:
-            return cls(f"{dialect_text}-{version_text}")
+            return cls(f"{family_text}-{version_text}")
         except ValueError:
             raise SdfFormatError(
-                f"Unknown or unsupported SDF dialect {dialect_text}-{version_text!r} "
+                f"Unknown or unsupported SDF revision {family_text}-{version_text!r} "
                 f"in magic {magic!r}"
             ) from None
 
@@ -92,11 +92,11 @@ class SdfDialect(StrEnum):
         """Whether the file stores ``create_date``/``mod_date`` as UTC.
 
         True only for :attr:`ISO_2_0` -- the standard only mandates UTC
-        timestamps starting with version 2.0. The other dialects store local
-        time. In memory the dates are UTC for every dialect, see
-        :class:`SdfHeader`.
+        timestamps starting with version 2.0. The other revisions store local
+        time. In memory the dates are UTC for every revision, see
+        :class:`Header`.
         """
-        return self is SdfDialect.ISO_2_0
+        return self is Revision.ISO_2_0
 
     @property
     def max_binary_count(self) -> int:
@@ -108,12 +108,12 @@ class SdfDialect(StrEnum):
         The standard sets no limit for the ASCII encoding. Writing a larger file in the binary
         encoding raises :class:`SdfFormatError`.
 
-        >>> SdfDialect.ISO_1_0.max_binary_count
+        >>> Revision.ISO_1_0.max_binary_count
         65535
-        >>> SdfDialect.ISO_2_0.max_binary_count
+        >>> Revision.ISO_2_0.max_binary_count
         4294967295
         """
-        return 2**32 - 1 if self is SdfDialect.ISO_2_0 else 2**16 - 1
+        return 2**32 - 1 if self is Revision.ISO_2_0 else 2**16 - 1
 
     @property
     def requires_tagged_trailer(self) -> bool:
@@ -124,7 +124,7 @@ class SdfDialect(StrEnum):
         file that already has a non-conforming trailer can still be read,
         see :func:`validate_trailer_tagged`.
         """
-        return self is SdfDialect.ISO_2_0
+        return self is Revision.ISO_2_0
 
     @property
     def uses_max_sentinel(self) -> bool:
@@ -133,10 +133,10 @@ class SdfDialect(StrEnum):
         True only for :attr:`BCR_1_0` -- the 1993 BCR proposal used the
         maximum representable value, since it still had unsigned integer
         types whose minimum (0) is a valid low bound rather than an
-        obviously-invalid one. ISO dialects use the minimum (see
-        :meth:`sdfio.SdfDataType.invalid_value`).
+        obviously-invalid one. ISO revisions use the minimum (see
+        :meth:`sdfio.DataTypeInfo.invalid_value`).
         """
-        return self is SdfDialect.BCR_1_0
+        return self is Revision.BCR_1_0
 
     @property
     def allows_ascii_comments(self) -> bool:
@@ -147,7 +147,7 @@ class SdfDialect(StrEnum):
         starting with ``;`` is ignored entirely. ISO 25178-71 has no such
         rule. The trailer is free text, so a ``;`` there is never a comment.
         """
-        return self is SdfDialect.BCR_1_0
+        return self is Revision.BCR_1_0
 
     @property
     def allows_symbolic_header_values(self) -> bool:
@@ -157,7 +157,7 @@ class SdfDialect(StrEnum):
         use e.g. ``DataType = INTEGER`` or ``Compression = NULL`` instead of
         the numeric code.
         """
-        return self is SdfDialect.BCR_1_0
+        return self is Revision.BCR_1_0
 
     @property
     def has_ascii_invalid_token(self) -> bool:
@@ -167,7 +167,7 @@ class SdfDialect(StrEnum):
         type's maximum value written as a number, exactly as in binary files.
         ``BAD`` is still accepted when reading BCR-1.0.
         """
-        return self is not SdfDialect.BCR_1_0
+        return self is not Revision.BCR_1_0
 
     @property
     def reverses_profile_order(self) -> bool:
@@ -183,21 +183,21 @@ class SdfDialect(StrEnum):
         MountainsMap renders BCR-1.0 with the first profile at the maximum
         y, unlike ISO. sdfio matches that on both read and write, so
         :attr:`SdfFile.y_axis`'s y-increases-with-row-index convention holds
-        for every dialect; a different tool could in principle disagree.
+        for every revision; a different tool could in principle disagree.
         """
-        return self is SdfDialect.BCR_1_0
+        return self is Revision.BCR_1_0
 
 
 #: Total length in bytes/characters of the file magic (e.g. ``aISO-2.0``):
-#: the a/b prefix plus a dialect value, which are all the same length.
-MAGIC_SIZE = len(ASCII_PREFIX) + len(SdfDialect.ISO_2_0)
+#: the a/b prefix plus a revision value, which are all the same length.
+MAGIC_SIZE = len(ASCII_PREFIX) + len(Revision.ISO_2_0)
 
 #: Every file magic sdfio can read, as bytes, e.g. for magic-sniffing file type detection.
-#: BCR-1.0 also allows an upper case ``A``/``B`` prefix, accepted for every dialect.
+#: BCR-1.0 also allows an upper case ``A``/``B`` prefix, accepted for every revision.
 MAGICS = tuple(
-    f"{prefix}{dialect}".encode("ascii")
+    f"{prefix}{revision}".encode("ascii")
     for prefix in (ASCII_PREFIX, BINARY_PREFIX, ASCII_PREFIX.upper(), BINARY_PREFIX.upper())
-    for dialect in SdfDialect
+    for revision in Revision
 )
 
 
@@ -205,14 +205,14 @@ class DataType(IntEnum):
     """SDF data area storage types, by their ``DataType`` header field code.
 
     Defined here (not in :mod:`sdfio.datatypes`, which owns the heavier
-    dtype/encoding logic) so :class:`SdfHeader`/:class:`SdfMetadata` can
+    dtype/encoding logic) so :class:`Header`/:class:`Metadata` can
     reference it directly for their ``data_type`` default -- :mod:`.datatypes`
-    itself imports :class:`SdfDialect` from this module, so the reverse
+    itself imports :class:`Revision` from this module, so the reverse
     import would be circular. :mod:`.datatypes` re-exports this name.
 
     Codes 0-2 are unsigned integer types from the pre-standard BCR-1.0
     proposal; ISO dropped them (see :mod:`.datatypes`'s ``DATA_TYPES`` for
-    which dialects accept which code).
+    which revisions accept which code).
     """
 
     UINT8 = 0
@@ -251,31 +251,31 @@ def to_sdf_datetime(value: datetime | None) -> datetime | None:
     return value.astimezone(UTC).replace(second=0, microsecond=0)
 
 
-def format_sdf_datetime(value: datetime | None, dialect: SdfDialect | None = None) -> str:
+def format_sdf_datetime(value: datetime | None, revision: Revision | None = None) -> str:
     """Format a datetime as the fixed-width SDF ``datetime`` field.
 
     :param value: ``None`` is formatted as the all-zero "not recorded"
         placeholder (see :func:`parse_sdf_datetime`). A naive value is taken
         as local time; the seconds are not written, as the field has the
         resolution of a minute.
-    :param dialect: If :attr:`SdfDialect.requires_utc`, the field holds the
-        UTC wall clock. Otherwise, or if omitted, the dialect stores local
+    :param revision: If :attr:`Revision.requires_utc`, the field holds the
+        UTC wall clock. Otherwise, or if omitted, the revision stores local
         time, so the field holds the wall clock of the system timezone (see
         the limitation noted in :func:`parse_sdf_datetime`).
     """
     utc = to_sdf_datetime(value)
     if utc is None:
         return _UNSET_DATETIME
-    if dialect is None or not dialect.requires_utc:
+    if revision is None or not revision.requires_utc:
         utc = utc.astimezone()
     return utc.strftime(_DATETIME_FORMAT)
 
 
-def parse_sdf_datetime(value: str, dialect: SdfDialect | None = None) -> datetime | None:
+def parse_sdf_datetime(value: str, revision: Revision | None = None) -> datetime | None:
     """Parse the fixed-width SDF ``datetime`` field; the result is always UTC.
 
-    :param dialect: If :attr:`SdfDialect.requires_utc`, the field is UTC.
-        Otherwise, or if omitted, the dialect stores local time, which is
+    :param revision: If :attr:`Revision.requires_utc`, the field is UTC.
+        Otherwise, or if omitted, the revision stores local time, which is
         taken as the wall clock of the system timezone and converted to UTC.
 
         This is only correct if the file is read on a system in the same
@@ -302,7 +302,7 @@ def parse_sdf_datetime(value: str, dialect: SdfDialect | None = None) -> datetim
         parsed = datetime.strptime(stripped, _DATETIME_FORMAT)
     except ValueError:  # a number that is no date, such as day 32 or month 13
         return None
-    if dialect is not None and dialect.requires_utc:
+    if revision is not None and revision.requires_utc:
         return parsed.replace(tzinfo=UTC)
     return to_sdf_datetime(parsed)
 
@@ -331,8 +331,8 @@ def _iter_tagged_fields(text: str, *, strict: bool) -> dict[str, str]:
 def parse_tagged_fields(text: str) -> dict[str, str]:
     """Parse "Name = Value" lines into a ``{name: value}`` dict.
 
-    This is the tagged field format the SDF header uses, and that a dialect
-    for which :attr:`SdfDialect.requires_tagged_trailer` is ``True`` also
+    This is the tagged field format the SDF header uses, and that a revision
+    for which :attr:`Revision.requires_tagged_trailer` is ``True`` also
     requires for the trailer on write (see :func:`validate_trailer_tagged`).
     Blank lines are skipped; field names are kept exactly as written
     (callers needing a case-insensitive lookup should match keys
@@ -354,33 +354,33 @@ def sanitize_tagged_fields(text: str) -> str:
     Unlike :func:`parse_tagged_fields`, this never raises: a non-blank line
     that doesn't match "Name = Value" is silently dropped instead of
     rejected. Useful for salvaging a trailer that's mostly, but not fully,
-    in the tagged format (e.g. converting a source file to a dialect that
+    in the tagged format (e.g. converting a source file to a revision that
     requires it) rather than discarding the whole thing.
     """
     return format_tagged_fields(_iter_tagged_fields(text, strict=False))
 
 
-def validate_trailer_tagged(dialect: SdfDialect, trailer: str | bytes) -> None:
-    """Reject a non-empty, non-tagged trailer for a dialect that requires the tagged format.
+def validate_trailer_tagged(revision: Revision, trailer: str | bytes) -> None:
+    """Reject a non-empty, non-tagged trailer for a revision that requires the tagged format.
 
     Enforced on write only (see :func:`validate_trailer_ascii` for the same
     read/write split). An empty ``trailer`` is always accepted (the trailer
-    is optional), and a dialect for which
-    :attr:`SdfDialect.requires_tagged_trailer` is ``False`` has no format
+    is optional), and a revision for which
+    :attr:`Revision.requires_tagged_trailer` is ``False`` has no format
     requirement for the trailer.
 
-    :raises SdfFormatError: If ``dialect.requires_tagged_trailer``, ``trailer``
+    :raises SdfFormatError: If ``revision.requires_tagged_trailer``, ``trailer``
         is non-empty, and it is not valid "Name = Value" lines (see
         :func:`parse_tagged_fields`).
     """
-    if not dialect.requires_tagged_trailer or not trailer:
+    if not revision.requires_tagged_trailer or not trailer:
         return
     text = trailer.decode("ascii", errors="replace") if isinstance(trailer, bytes) else trailer
     try:
         parse_tagged_fields(text)
     except SdfFormatError as error:
         raise SdfFormatError(
-            f"SDF {dialect} trailer must use the tagged 'Name = Value' format: {error}"
+            f"SDF {revision} trailer must use the tagged 'Name = Value' format: {error}"
         ) from error
 
 
@@ -388,7 +388,7 @@ def validate_trailer_ascii(trailer: str | bytes) -> None:
     """Reject a trailer that is not 7-bit ASCII.
 
     Record 3 (the trailer) is defined as "a sequence of ASCII values",
-    regardless of SDF dialect or ASCII/binary file representation. Only
+    regardless of SDF revision or ASCII/binary file representation. Only
     enforced on write -- a file that already has a non-ASCII trailer can
     still be read; the trailer is secondary to the header/data area, which
     is unaffected by it.
@@ -404,7 +404,7 @@ def validate_manufacturer_id_ascii(manufacturer_id: str) -> None:
     """Reject a manufacturer_id that is not 7-bit ASCII.
 
     ManufacID's data type is an ASCII character string per the standard,
-    regardless of SDF dialect or ASCII/binary file representation. Oversized
+    regardless of SDF revision or ASCII/binary file representation. Oversized
     values are silently truncated elsewhere (the binary field is
     fixed-width); this only rejects characters that can't be represented as
     ASCII at all.
@@ -432,7 +432,7 @@ def validate_compression(compression: int) -> None:
     """Reject a compressed data area.
 
     No compression scheme (e.g. BCR's proposed RLL) is implemented for
-    any dialect.
+    any revision.
 
     :raises SdfFormatError: If ``compression`` is nonzero.
     """
@@ -443,7 +443,7 @@ def validate_compression(compression: int) -> None:
 def validate_check_type(check_type: int) -> None:
     """Reject a checksummed data area.
 
-    No checksum scheme is implemented for any dialect. BCR's
+    No checksum scheme is implemented for any revision. BCR's
     ``IntegerTrace`` checksum is an inline value trailing each profile in
     the data area itself, not a value carried by the header.
 
@@ -454,17 +454,17 @@ def validate_check_type(check_type: int) -> None:
 
 
 @dataclass
-class SdfHeader:
+class Header:
     """SDF record 1 header fields.
 
     ``Compression`` and ``CheckType`` are not modelled as fields here:
     neither compression nor a checksummed data area is supported, for
-    any dialect, on read or write (rejected outright, always written as
+    any revision, on read or write (rejected outright, always written as
     ``0``) -- see :func:`validate_compression`/:func:`validate_check_type`.
 
-    :param dialect: SDF dialect and version (see :class:`SdfDialect`).
+    :param revision: Revision of the SDF format (see :class:`Revision`).
         Accepts a raw ``"ISO-2.0"``-shaped string as a convenience, which is
-        coerced to :class:`SdfDialect`.
+        coerced to :class:`Revision`.
     :param format: Whether the file uses the binary or the ASCII representation, see
         :class:`FileFormat`.
     :param manufacturer_id: Measurement instrument manufacturer's identifier;
@@ -472,9 +472,9 @@ class SdfHeader:
     :param create_date: Original creation date and time, or ``None`` if not
         recorded in the file (see :func:`parse_sdf_datetime`). It is always
         held as a timezone-aware UTC datetime with the resolution of a minute,
-        as the field has, whatever the dialect: any timezone-aware value is
+        as the field has, whatever the revision: any timezone-aware value is
         converted when it is set, and a naive one is taken as local time. A
-        dialect for which :attr:`SdfDialect.requires_utc` is ``False`` writes
+        revision for which :attr:`Revision.requires_utc` is ``False`` writes
         it as local time (see :func:`format_sdf_datetime`).
     :param mod_date: Last modification date and time, or ``None`` if not
         recorded in the file; held like ``create_date``.
@@ -491,12 +491,12 @@ class SdfHeader:
         after acquisition, changing ``z_scale``, while ``z_resolution``
         stays as a record of the instrument's original base resolution.
     :param data_type: ``DataType`` code, see :mod:`sdfio.datatypes`.
-    :raises SdfVersionError: If ``dialect`` is not a valid :class:`SdfDialect`
+    :raises SdfVersionError: If ``revision`` is not a valid :class:`Revision`
         member.
     :raises TypeError: If ``format`` is not a :class:`FileFormat` member.
     """
 
-    dialect: SdfDialect = SdfDialect.ISO_2_0
+    revision: Revision = Revision.ISO_2_0
     format: FileFormat = FileFormat.BINARY
     manufacturer_id: str = "sdfio"
     create_date: datetime | None = field(default_factory=lambda: datetime.now(UTC))
@@ -510,12 +510,12 @@ class SdfHeader:
     data_type: int = DataType.BINARY64
 
     def __post_init__(self) -> None:
-        """Coerce and validate the SDF dialect, and validate the file format."""
+        """Coerce and validate the SDF revision, and validate the file format."""
         try:
-            self.dialect = SdfDialect(self.dialect)
+            self.revision = Revision(self.revision)
         except ValueError:
             raise SdfVersionError(
-                f"Unsupported SDF dialect {self.dialect!r}, expected one of {tuple(SdfDialect)}"
+                f"Unsupported SDF revision {self.revision!r}, expected one of {tuple(Revision)}"
             ) from None
         if not isinstance(self.format, FileFormat):
             raise TypeError(f"format must be a FileFormat member, got {self.format!r}")
@@ -543,37 +543,37 @@ class SdfHeader:
 
     @property
     def magic(self) -> str:
-        """8-character file magic (dialect and version) written at the start of the file."""
+        """8-character file magic (family and version) written at the start of the file."""
         prefix = BINARY_PREFIX if self.format is FileFormat.BINARY else ASCII_PREFIX
-        return f"{prefix}{self.dialect}"
+        return f"{prefix}{self.revision}"
 
 
 @dataclass(frozen=True)
-class SdfMetadata:
+class Metadata:
     """Reusable :func:`sdfio.write` header template.
 
-    Holds exactly the :class:`SdfHeader` fields that are meaningful to reuse
+    Holds exactly the :class:`Header` fields that are meaningful to reuse
     across many :func:`sdfio.write` calls -- as opposed to ``x_scale``/
     ``y_scale``/``z_scale``/``format``, which differ on every call and are
     write()'s own parameters, and ``num_points``/``num_profiles``/``format``,
     which write() always derives itself.
     Every field here is used as given, with no overriding.
 
-    :param dialect: SDF dialect and version (see :class:`SdfDialect`).
+    :param revision: Revision of the SDF format (see :class:`Revision`).
     :param manufacturer_id: Measurement instrument manufacturer's identifier;
         may include the source of the data, hardware and software identifiers.
     :param create_date: Creation timestamp; ``None`` (the default) means the
         current UTC time at the time :func:`sdfio.write` is called. Held like
-        :attr:`SdfHeader.create_date`: as UTC to the minute.
+        :attr:`Header.create_date`: as UTC to the minute.
     :param mod_date: Modification timestamp, held and defaulting like
         ``create_date``.
     :param z_resolution: Quantization step in metres, or a negative value if
         unknown.
     :param data_type: ``DataType`` code, see :mod:`sdfio.datatypes`; must be
-        valid for ``dialect``.
+        valid for ``revision``.
     """
 
-    dialect: SdfDialect = SdfDialect.ISO_2_0
+    revision: Revision = Revision.ISO_2_0
     manufacturer_id: str = "sdfio"
     create_date: datetime | None = None
     mod_date: datetime | None = None
