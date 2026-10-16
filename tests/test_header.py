@@ -189,10 +189,10 @@ def test_metadata_holds_dates_as_utc_like_the_header() -> None:
     metadata = Metadata(create_date=plus_two, mod_date=datetime(2024, 9, 3, 14, 0))
 
     assert metadata.create_date == datetime(2024, 9, 3, 12, 0, tzinfo=UTC)
-    assert metadata.create_date is not None
+    assert isinstance(metadata.create_date, datetime)
     assert metadata.create_date.tzinfo == UTC
     assert metadata.mod_date == datetime(2024, 9, 3, 14, 0).astimezone(UTC)
-    assert Metadata().create_date is None  # the default is the time of the write
+    assert Metadata().create_date == "now"  # the time the file is built
 
 
 def test_dates_have_the_resolution_of_the_field_so_a_file_returns_what_was_set() -> None:

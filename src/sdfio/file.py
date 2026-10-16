@@ -350,8 +350,8 @@ class SdfFile:
         )
         now = datetime.now(UTC)
         template = {field.name: getattr(meta, field.name) for field in fields(Metadata)}
-        template["create_date"] = meta.create_date or now
-        template["mod_date"] = meta.mod_date or now
+        for name in ("create_date", "mod_date"):
+            template[name] = now if template[name] == "now" else template[name]
         header = Header(
             **template, format=format, x_scale=x_scale, y_scale=y_scale, z_scale=resolved_z_scale
         )

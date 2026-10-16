@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Literal
 
 from ._dates import to_sdf_datetime
 from ._validation import validate_manufacturer_id_ascii, validate_z_scale
@@ -141,11 +142,10 @@ class Metadata:
     :param revision: Revision of the SDF format (see :class:`Revision`).
     :param manufacturer_id: Measurement instrument manufacturer's identifier;
         may include the source of the data, hardware and software identifiers.
-    :param create_date: Creation timestamp; ``None`` (the default) means the
-        current UTC time at the time :func:`sdfio.write` is called. Held like
-        :attr:`Header.create_date`: as UTC to the minute.
-    :param mod_date: Modification timestamp, held and defaulting like
-        ``create_date``.
+    :param create_date: Creation timestamp, or ``"now"`` (the default) for the time the file is
+        built, or ``None`` for not recorded. Held like :attr:`Header.create_date`: as UTC to the
+        minute.
+    :param mod_date: Modification timestamp, held and defaulting like ``create_date``.
     :param z_resolution: Quantization step in metres, or a negative value if
         unknown.
     :param data_type: ``DataType`` code, see :mod:`sdfio.datatypes`; must be
@@ -154,8 +154,8 @@ class Metadata:
 
     revision: Revision = Revision.ISO_2_0
     manufacturer_id: str = "sdfio"
-    create_date: datetime | None = None
-    mod_date: datetime | None = None
+    create_date: datetime | Literal["now"] | None = "now"
+    mod_date: datetime | Literal["now"] | None = "now"
     z_resolution: float = -1.0
     data_type: DataType = DataType.BINARY64
 
@@ -164,5 +164,6 @@ class Metadata:
         object.__setattr__(
             self, "data_type", require_supported_data_type(self.data_type, self.revision).type
         )
-        object.__setattr__(self, "create_date", to_sdf_datetime(self.create_date))
-        object.__setattr__(self, "mod_date", to_sdf_datetime(self.mod_date))
+        for name in ("create_date", "mod_date"):
+            value = getattr(self, name)
+            object.__setattr__(self, name, value if value == "now" else to_sdf_datetime(value))

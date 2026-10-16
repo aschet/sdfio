@@ -769,3 +769,20 @@ def test_a_bad_value_and_a_bad_file_are_value_errors() -> None:
     with pytest.raises(ValueError, match="Unsupported SDF revision"):
         sdfio.Header(revision="3.0")  # type: ignore[arg-type]
     assert issubclass(sdfio.SdfVersionError, sdfio.SdfFormatError)
+
+
+def test_a_template_dates_are_now_by_default_and_none_means_not_recorded() -> None:
+    before = datetime.now(UTC).replace(second=0, microsecond=0)
+    now = sdfio.SdfFile.from_array(np.zeros((1, 1)), x_scale=1e-6, y_scale=1e-6)
+    assert now.header.create_date is not None
+    assert now.header.create_date >= before
+    assert now.header.mod_date is not None
+
+    unrecorded = sdfio.SdfFile.from_array(
+        np.zeros((1, 1)),
+        x_scale=1e-6,
+        y_scale=1e-6,
+        metadata=sdfio.Metadata(create_date=None, mod_date=None),
+    )
+    assert unrecorded.header.create_date is None
+    assert unrecorded.header.mod_date is None
