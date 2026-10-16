@@ -11,8 +11,11 @@ from typing import Any
 import numpy as np
 import pytest
 
+import sdfio
 from sdfio import _binary
+from sdfio.datatypes import DataType
 from sdfio.exceptions import SdfFormatError
+from sdfio.file import SdfFile
 from sdfio.header import SdfDialect, SdfHeader
 
 
@@ -334,3 +337,33 @@ def test_loads_accepts_upper_case_binary_prefix() -> None:
     blob = _binary.dumps(header, np.zeros((1, 1)))
     read_header, _data, _trailer = _binary.loads(b"B" + blob[1:])
     assert read_header.dialect == SdfDialect.BCR_1_0
+
+
+@pytest.mark.parametrize("dialect", list(SdfDialect))
+def test_max_binary_count_is_what_the_binary_header_can_hold(dialect: SdfDialect) -> None:
+    field_size = _binary._COUNTS_STRUCT[dialect].size // 2  # NumPoints and NumProfiles
+    assert dialect.max_binary_count == 2 ** (8 * field_size) - 1
+
+
+@pytest.mark.parametrize("dialect", [SdfDialect.ISO_1_0, SdfDialect.BCR_1_0])
+def test_binary_files_of_the_older_dialects_hold_at_most_the_max_count(
+    dialect: SdfDialect,
+) -> None:
+    limit = dialect.max_binary_count
+    data_type = DataType.INT16
+
+    def write(points: int, binary: bool) -> bytes:
+        header = SdfHeader(
+            dialect=dialect,
+            binary=binary,
+            num_points=points,
+            num_profiles=1,
+            z_scale=1e-9,
+            data_type=data_type,
+        )
+        return SdfFile(header=header, data=np.zeros((1, points))).dumps()
+
+    assert sdfio.SdfFile.loads(write(limit, binary=True)).header.num_points == limit
+    with pytest.raises(SdfFormatError, match=str(limit)):
+        write(limit + 1, binary=True)
+    assert sdfio.SdfFile.loads(write(limit + 1, binary=False)).header.num_points == limit + 1

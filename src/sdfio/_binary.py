@@ -178,11 +178,7 @@ def dump(header: SdfHeader, data: np.ndarray, fp: IO[bytes], trailer: bytes = b"
     fp.write(_pad(format_sdf_datetime(header.create_date, header.dialect), _DATE_SIZE))
     fp.write(_pad(format_sdf_datetime(header.mod_date, header.dialect), _DATE_SIZE))
     counts_struct = _COUNTS_STRUCT[header.dialect]
-    # counts_struct.size is NumPoints+NumProfiles combined (e.g. 4 bytes for
-    # ISO-1.0/BCR-1.0's two uint16 fields); halving it gives one field's byte
-    # width, and from that its max unsigned value (65535 for uint16, 2**32-1
-    # for uint32).
-    max_count = 2 ** (8 * (counts_struct.size // 2)) - 1
+    max_count = header.dialect.max_binary_count
     if not (0 <= header.num_points <= max_count and 0 <= header.num_profiles <= max_count):
         raise SdfFormatError(
             f"NumPoints/NumProfiles must be between 0 and {max_count} for SDF "

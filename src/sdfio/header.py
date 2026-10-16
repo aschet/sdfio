@@ -91,6 +91,23 @@ class SdfDialect(StrEnum):
         return self is SdfDialect.ISO_2_0
 
     @property
+    def max_binary_count(self) -> int:
+        """Largest number of points per profile, and of profiles, of the binary encoding.
+
+        The binary header holds both numbers in 2 bytes for :attr:`ISO_1_0` and :attr:`BCR_1_0`,
+        which is 65535, and in 4 bytes for :attr:`ISO_2_0`, which is 4294967295 (ISO 25178-71,
+        Table 2, where the data types of these fields are listed for the binary format only).
+        The standard sets no limit for the ASCII encoding. Writing a larger file in the binary
+        encoding raises :class:`SdfFormatError`.
+
+        >>> SdfDialect.ISO_1_0.max_binary_count
+        65535
+        >>> SdfDialect.ISO_2_0.max_binary_count
+        4294967295
+        """
+        return 2**32 - 1 if self is SdfDialect.ISO_2_0 else 2**16 - 1
+
+    @property
     def requires_tagged_trailer(self) -> bool:
         """Whether a non-empty trailer written on disk must use the tagged ``Name = Value`` format.
 
