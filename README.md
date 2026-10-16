@@ -82,7 +82,8 @@ Reading tolerates known real-world deviations from the standard:
   by BCR-1.0).
 - A trailer that isn't 7-bit ASCII is returned as-is, not rejected.
 - A `binary32`/`binary64` value written as `NaN` instead of the sentinel still decodes as a
-  non-measured point.
+  non-measured point, and in ASCII files the text `NaN` is read as the marker `BAD`, for every
+  data type.
 - `Xscale`, `Yscale` and `Zscale` are read as they are, also when they are zero, negative or not
   finite; the heights are then as meaningless as the scale, but never an error or a warning.
   Writing rejects such a `Zscale`.

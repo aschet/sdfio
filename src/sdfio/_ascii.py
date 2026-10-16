@@ -38,7 +38,11 @@ _MAGIC_RE = re.compile(
     rf"^(?P<prefix>[{ASCII_PREFIX}{BINARY_PREFIX}{ASCII_PREFIX.upper()}{BINARY_PREFIX.upper()}])"
     rf"(?P<dialect>[A-Z]{{3}})-(?P<version>\d\.\d)$"
 )
+#: The literal that marks a point that is not measured, which is what is written.
 _INVALID_MARKER = "BAD"
+#: What is read as such a point: the literal, and the text ``NaN``, which some writers write for
+#: it instead.
+_INVALID_MARKERS = (_INVALID_MARKER, "NAN")
 # The standard mandates <CRLF> line endings; dumps() always writes them.
 # Reading also accepts a bare LF or CR, which BCR-1.0's specification allows.
 _LINE_SPLIT_RE = re.compile(r"\r\n|\n|\r")
@@ -219,9 +223,10 @@ def _parse_data(data_text: str, header: SdfHeader, data_type: SdfDataType) -> np
     is_float = data_type.type in (DataType.BINARY32, DataType.BINARY64)
     values = np.empty(header.num_points * header.num_profiles, dtype=np.float64)
     for index, token in enumerate(tokens):
-        # The standard only specifies the literal "BAD"; matching
-        # case-insensitively is a deliberate leniency, not mandated.
-        if token.upper() == _INVALID_MARKER:
+        # The standard only specifies the literal "BAD"; matching it case-insensitively, and
+        # reading "NaN" as the same marker, are deliberate leniencies, not mandated. "NaN" is
+        # not left to float(), so that it means the same for every data type.
+        if token.upper() in _INVALID_MARKERS:
             values[index] = np.nan
         else:
             try:

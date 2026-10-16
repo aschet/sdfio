@@ -560,3 +560,40 @@ def test_an_ascii_z_scale_without_a_sensible_product_is_read_without_a_warning(
 
     assert data.shape == (1, 2)
     assert header.num_points == 2
+
+
+def _ascii_with_tokens(dialect: SdfDialect, data_type: DataType, tokens: list[str]) -> str:
+    return (
+        f"a{dialect}\r\n"
+        "ManufacID = sdfio\r\nCreateDate = 051020261200\r\nModDate = 051020261200\r\n"
+        f"NumPoints = {len(tokens)}\r\nNumProfiles = 1\r\n"
+        f"Xscale = 1e-6\r\nYscale = 1e-6\r\nZscale = 1e-9\r\nZresolution = -1\r\n"
+        f"Compression = 0\r\nDataType = {int(data_type)}\r\nCheckType = 0\r\n*\r\n"
+        + " ".join(tokens)
+        + "\r\n*\r\n*\r\n"
+    )
+
+
+@pytest.mark.parametrize("marker", ["BAD", "bad", "NaN", "nan", "NAN"])
+@pytest.mark.parametrize("data_type", [DataType.INT16, DataType.BINARY64])
+@pytest.mark.parametrize("dialect", list(SdfDialect))
+def test_the_text_nan_is_read_as_the_bad_marker_for_every_data_type(
+    dialect: SdfDialect, data_type: DataType, marker: str
+) -> None:
+    values = ["10", marker, "30"] if data_type is DataType.INT16 else ["1.5", marker, "3.5"]
+    text = _ascii_with_tokens(dialect, data_type, values)
+
+    header, data, _ = _ascii.loads(text)
+
+    assert header.dialect is dialect
+    assert data.shape == (1, 3)
+    assert np.isnan(data).tolist() == [[False, True, False]]
+    assert data[0, 0] == pytest.approx(float(values[0]) * header.z_scale)
+    assert data[0, 2] == pytest.approx(float(values[2]) * header.z_scale)
+
+
+def test_a_token_that_is_neither_a_number_nor_a_marker_is_still_rejected() -> None:
+    text = _ascii_with_tokens(SdfDialect.ISO_2_0, DataType.INT16, ["10", "NA", "30"])
+
+    with pytest.raises(SdfFormatError, match="Invalid data value"):
+        _ascii.loads(text)
