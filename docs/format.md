@@ -16,23 +16,23 @@ developed methods for the characterisation of roughness in three dimensions (EUR
 standardized in ISO 25178-71. The file extension is `.sdf`. A file is a header, the data area and
 a trailer, in an ASCII or a binary representation.
 
-## Dialects and Versions
+## Revisions and Versions
 
 The first characters of a file, the magic, say which representation it has and which version of
 which document it follows. The first character is `a` for the ASCII representation and `b` for the
 binary one. It is followed by the document and the version, as in `aISO-2.0` or `bBCR-1.0`.
-sdfio reads and writes three dialects:
+sdfio reads and writes three revisions:
 
-| Dialect | Defined by | Differences |
+| Revision | Defined by | Differences |
 | --- | --- | --- |
 | `BCR-1.0` | The 1993 proposal | Unsigned integer types. The maximum of a type marks a point that is not measured. ASCII files may have comments, and may name the data type instead of giving its code. Times have no time zone. |
 | `ISO-1.0` | ISO 25178-71:2017 and ISO 25178-71:2026 | The data types int16, int32 and binary64. The minimum of a type marks a point that is not measured, and the ASCII files write `BAD` for it. Times have no time zone. |
-| `ISO-2.0` | ISO 25178-71:2026 | The numbers of columns and rows are 4 bytes instead of 2. The data types int8 and binary32 are added. Times are UTC, and the trailer, if there is one, has the `Name = Value` form of the header. |
+| `ISO-2.0` | ISO 25178-71:2026 | The numbers of columns and rows are 4 bytes instead of 2, so the binary files hold up to 4294967295 of them instead of 65535 (`Revision.rules.max_binary_count`); the standard sets no limit for the ASCII files. The data types int8 and binary32 are added. Times are UTC, and the trailer, if there is one, has the `Name = Value` form of the header. |
 
 The header has fields for a compression and a checksum of the data. ISO-1.0 and ISO-2.0 have only the
 value for none, and BCR-1.0 also defines run-length-limited compression and a checksum of each
 profile. sdfio does not support them: it reads and writes only files without compression and
-without checksums, in all dialects.
+without checksums, in all revisions.
 
 ## Records
 
@@ -54,10 +54,10 @@ character `*`, and the last of these lines ends the file.
 | Field | Content |
 | --- | --- |
 | `ManufacID` | Names where the data comes from, in up to 10 characters. |
-| `CreateDate` | When the data was generated, as `DDMMYYYYhhmm`. All zeros stand for a time that is not recorded. |
+| `CreateDate` | When the data was generated, as `DDMMYYYYhhmm`. All zeros stand for a time that is not recorded. sdfio holds the time as UTC in memory, and writes it as UTC for `ISO-2.0` and as local time for the older versions. |
 | `ModDate` | When the file was last modified, in the same form. |
 | `NumPoints` | The number of columns of the matrix. |
-| `NumProfiles` | The number of rows of the matrix. It is 1 for a profile. |
+| `NumProfiles` | The number of rows of the matrix. It is 1 for a profile, which `is_profile` of the file tests. |
 | `Xscale` | The sampling interval along x in metres. |
 | `Yscale` | The sampling interval along y in metres. It has no meaning for a profile. |
 | `Zscale` | The factor that turns a coded height into metres. It is positive. |
@@ -90,9 +90,9 @@ x = (j - 1) * Xscale     y = (i - 1) * Yscale     z = w * Zscale
 in a right-handed coordinate system: `x` grows with the column and `y` with the row. In a file
 read by sdfio, `data` is the array of the heights in metres and `x_axis` and `y_axis` have the
 coordinates. `points()` of the file combines them in an array of shape `(rows, columns, 3)`. The
-first row has `y = 0` in all dialects. The proposal of 1993 did not say in which direction the
+first row has `y = 0` in all revisions. The proposal of 1993 did not say in which direction the
 profiles are stored. sdfio follows MountainsMap, which shows the first profile of a BCR file at the
-maximum `y`, and reverses the rows when it reads and writes that dialect.
+maximum `y`, and reverses the rows when it reads and writes that revision.
 
 ## Data Types
 
@@ -130,6 +130,6 @@ and sdfio offers them as `trailer_fields`.
 
 ## Line Ends and Case
 
-ASCII files of ISO end each line with CR and LF. Files of the BCR dialect may end lines with CR
+ASCII files of ISO end each line with CR and LF. Files of the BCR revision may end lines with CR
 or LF alone, and sdfio reads them. The magic of a BCR file may have an upper case first
-character, which sdfio accepts for all dialects.
+character, which sdfio accepts for all revisions.

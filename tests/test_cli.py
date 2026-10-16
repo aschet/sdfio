@@ -6,12 +6,14 @@ from __future__ import annotations
 
 import subprocess
 import sys
+from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
 import pytest
 
 import sdfio
+from sdfio import FileFormat
 from sdfio.cli import main
 
 
@@ -26,21 +28,41 @@ def test_cli_info_prints_header(tmp_path: Path, capsys: pytest.CaptureFixture[st
     assert "NumProfiles = 2" in output
 
 
-def test_cli_info_prints_dialect(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
+@pytest.mark.parametrize("revision", list(sdfio.Revision))
+def test_cli_info_prints_the_dates_as_local_time(
+    revision: sdfio.Revision, tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    path = tmp_path / "surface.sdf"
+    created = datetime(2026, 10, 5, 12, 0, tzinfo=UTC)
+    modified = datetime(2026, 10, 6, 7, 30, tzinfo=UTC)
+    metadata = sdfio.Metadata(
+        revision=revision, create_date=created, mod_date=modified, data_type=sdfio.DataType.INT16
+    )
+    sdfio.write(path, np.zeros((1, 2)), x_scale=1e-6, y_scale=1e-6, metadata=metadata)
+
+    assert main(["info", str(path)]) == 0
+
+    output = capsys.readouterr().out
+    # The clock of this machine, with its offset from UTC, whatever zone that is.
+    assert f"CreateDate  = {created.astimezone().isoformat(sep=' ', timespec='minutes')}" in output
+    assert f"ModDate     = {modified.astimezone().isoformat(sep=' ', timespec='minutes')}" in output
+
+
+def test_cli_info_prints_revision(tmp_path: Path, capsys: pytest.CaptureFixture[str]) -> None:
     path = tmp_path / "surface.sdf"
     sdfio.write(path, np.zeros((2, 3)), x_scale=1e-6, y_scale=2e-6)
 
     assert main(["info", str(path)]) == 0
 
     output = capsys.readouterr().out
-    assert "Dialect     = ISO-2.0" in output
+    assert "Revision    = ISO-2.0" in output
 
 
 def test_cli_info_prints_not_recorded_for_none_dates(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     path = tmp_path / "surface.sdf"
-    header = sdfio.SdfHeader(num_points=1, num_profiles=1, create_date=None, mod_date=None)
+    header = sdfio.Header(create_date=None, mod_date=None)
     sdfio.SdfFile(header=header, data=np.zeros((1, 1))).save(path)
 
     assert main(["info", str(path)]) == 0
@@ -89,7 +111,7 @@ def test_cli_convert(tmp_path: Path) -> None:
     assert main(["convert", str(source), str(destination), "--format", "ascii"]) == 0
 
     converted = sdfio.read(destination)
-    assert converted.header.binary is False
+    assert converted.header.format is FileFormat.ASCII
     np.testing.assert_allclose(converted.data, np.ones((2, 2)), rtol=1e-9)
 
 
@@ -102,7 +124,7 @@ def test_cli_convert_changes_data_type(tmp_path: Path) -> None:
         x_scale=1e-6,
         y_scale=1e-6,
         z_scale=1.0,
-        metadata=sdfio.SdfMetadata(data_type=sdfio.DataType.INT16),
+        metadata=sdfio.Metadata(data_type=sdfio.DataType.INT16),
     )
 
     args = [
@@ -129,10 +151,10 @@ def test_cli_convert_without_format_keeps_source_format(tmp_path: Path) -> None:
     assert main(["convert", str(source), str(destination), "--type", "binary64"]) == 0
 
     converted = sdfio.read(destination)
-    assert converted.header.binary is False
+    assert converted.header.format is FileFormat.ASCII
 
 
-def test_cli_convert_changes_dialect(tmp_path: Path) -> None:
+def test_cli_convert_changes_revision(tmp_path: Path) -> None:
     source = tmp_path / "surface.sdf"
     destination = tmp_path / "converted.sdf"
     sdfio.write(
@@ -140,18 +162,18 @@ def test_cli_convert_changes_dialect(tmp_path: Path) -> None:
         np.ones((2, 2)),
         x_scale=1e-6,
         y_scale=1e-6,
-        metadata=sdfio.SdfMetadata(dialect=sdfio.SdfDialect.ISO_1_0),
+        metadata=sdfio.Metadata(revision=sdfio.Revision.ISO_1_0),
     )
 
-    assert main(["convert", str(source), str(destination), "--dialect", "ISO-2.0"]) == 0
+    assert main(["convert", str(source), str(destination), "--revision", "ISO-2.0"]) == 0
 
     converted = sdfio.read(destination)
-    assert converted.header.dialect == sdfio.SdfDialect.ISO_2_0
+    assert converted.header.revision == sdfio.Revision.ISO_2_0
     assert converted.header.create_date is not None
     assert converted.header.create_date.tzinfo is not None
 
 
-def test_cli_convert_dialect_rejects_incompatible_data_type(
+def test_cli_convert_revision_rejects_incompatible_data_type(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     source = tmp_path / "surface.sdf"
@@ -161,16 +183,14 @@ def test_cli_convert_dialect_rejects_incompatible_data_type(
         np.ones((2, 2)),
         x_scale=1e-6,
         y_scale=1e-6,
-        metadata=sdfio.SdfMetadata(
-            dialect=sdfio.SdfDialect.ISO_2_0, data_type=sdfio.DataType.BINARY32
-        ),
+        metadata=sdfio.Metadata(revision=sdfio.Revision.ISO_2_0, data_type=sdfio.DataType.BINARY32),
     )
 
-    assert main(["convert", str(source), str(destination), "--dialect", "ISO-1.0"]) == 1
-    assert "not valid for SDF dialect" in capsys.readouterr().err
+    assert main(["convert", str(source), str(destination), "--revision", "ISO-1.0"]) == 1
+    assert "not valid for SDF revision" in capsys.readouterr().err
 
 
-def test_cli_convert_dialect_keeps_already_tagged_trailer_unchanged(tmp_path: Path) -> None:
+def test_cli_convert_revision_keeps_already_tagged_trailer_unchanged(tmp_path: Path) -> None:
     source = tmp_path / "surface.sdf"
     destination = tmp_path / "converted.sdf"
     sdfio.write(
@@ -178,18 +198,18 @@ def test_cli_convert_dialect_keeps_already_tagged_trailer_unchanged(tmp_path: Pa
         np.ones((2, 2)),
         x_scale=1e-6,
         y_scale=1e-6,
-        metadata=sdfio.SdfMetadata(dialect=sdfio.SdfDialect.ISO_1_0),
+        metadata=sdfio.Metadata(revision=sdfio.Revision.ISO_1_0),
         trailer="Operator = Jane Doe",
     )
 
-    assert main(["convert", str(source), str(destination), "--dialect", "ISO-2.0"]) == 0
+    assert main(["convert", str(source), str(destination), "--revision", "ISO-2.0"]) == 0
 
     converted = sdfio.read(destination)
-    assert converted.header.dialect == sdfio.SdfDialect.ISO_2_0
+    assert converted.header.revision == sdfio.Revision.ISO_2_0
     assert converted.trailer == b"Operator = Jane Doe"
 
 
-def test_cli_convert_dialect_rejects_incompatible_trailer(
+def test_cli_convert_revision_rejects_incompatible_trailer(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ) -> None:
     source = tmp_path / "surface.sdf"
@@ -199,11 +219,11 @@ def test_cli_convert_dialect_rejects_incompatible_trailer(
         np.ones((2, 2)),
         x_scale=1e-6,
         y_scale=1e-6,
-        metadata=sdfio.SdfMetadata(dialect=sdfio.SdfDialect.ISO_1_0),
+        metadata=sdfio.Metadata(revision=sdfio.Revision.ISO_1_0),
         trailer="not tagged fields",
     )
 
-    assert main(["convert", str(source), str(destination), "--dialect", "ISO-2.0"]) == 1
+    assert main(["convert", str(source), str(destination), "--revision", "ISO-2.0"]) == 1
     assert "tagged 'Name = Value' format" in capsys.readouterr().err
 
 
@@ -215,26 +235,26 @@ def test_cli_convert_fix_trailer_drops_entirely_incompatible_trailer(tmp_path: P
         np.ones((2, 2)),
         x_scale=1e-6,
         y_scale=1e-6,
-        metadata=sdfio.SdfMetadata(dialect=sdfio.SdfDialect.ISO_1_0),
+        metadata=sdfio.Metadata(revision=sdfio.Revision.ISO_1_0),
         trailer="not tagged fields",
     )
 
-    args = ["convert", str(source), str(destination), "--dialect", "ISO-2.0", "--fix-trailer"]
+    args = ["convert", str(source), str(destination), "--revision", "ISO-2.0", "--fix-trailer"]
     assert main(args) == 0
 
     converted = sdfio.read(destination)
-    assert converted.header.dialect == sdfio.SdfDialect.ISO_2_0
+    assert converted.header.revision == sdfio.Revision.ISO_2_0
     assert not converted.trailer
 
 
-def test_cli_convert_fix_trailer_replaces_non_ascii_char_for_non_tagged_dialect(
+def test_cli_convert_fix_trailer_replaces_non_ascii_char_for_non_tagged_revision(
     tmp_path: Path,
 ) -> None:
-    """-x must also catch the universal ASCII rule, not just the dialect-specific tagged format."""
+    """-x must also catch the universal ASCII rule, not just the revision-specific tagged format."""
     source = tmp_path / "surface.sdf"
     destination = tmp_path / "converted.sdf"
     sdf = sdfio.SdfFile(
-        header=sdfio.SdfHeader(dialect=sdfio.SdfDialect.ISO_1_0, num_points=1, num_profiles=1),
+        header=sdfio.Header(revision=sdfio.Revision.ISO_1_0),
         data=np.zeros((1, 1)),
         trailer=b"Note = X\nAnother line",
     )
@@ -245,7 +265,7 @@ def test_cli_convert_fix_trailer_replaces_non_ascii_char_for_non_tagged_dialect(
     # BCR-1.0 has no tagged-format requirement, so freeform content (like
     # "Another line", with no "=") must survive; only the ASCII rule applies,
     # and the bad byte is replaced (not the whole line dropped).
-    args = ["convert", str(source), str(destination), "--dialect", "BCR-1.0", "--fix-trailer"]
+    args = ["convert", str(source), str(destination), "--revision", "BCR-1.0", "--fix-trailer"]
     assert main(args) == 0
 
     converted = sdfio.read(destination)
@@ -261,15 +281,15 @@ def test_cli_convert_fix_trailer_keeps_only_tagged_lines(tmp_path: Path) -> None
         x_scale=1e-6,
         y_scale=1e-6,
         format=sdfio.FileFormat.ASCII,
-        metadata=sdfio.SdfMetadata(dialect=sdfio.SdfDialect.ISO_1_0),
+        metadata=sdfio.Metadata(revision=sdfio.Revision.ISO_1_0),
         trailer="OperatorName = Jane Doe\r\nsome free text without equals\r\nPartName = X",
     )
 
-    args = ["convert", str(source), str(destination), "--dialect", "ISO-2.0", "--fix-trailer"]
+    args = ["convert", str(source), str(destination), "--revision", "ISO-2.0", "--fix-trailer"]
     assert main(args) == 0
 
     converted = sdfio.read(destination)
-    assert converted.header.dialect == sdfio.SdfDialect.ISO_2_0
+    assert converted.header.revision == sdfio.Revision.ISO_2_0
     assert converted.trailer_fields == {"OperatorName": "Jane Doe", "PartName": "X"}
 
 
@@ -282,11 +302,11 @@ def test_cli_convert_fix_trailer_keeps_already_valid_trailer(tmp_path: Path) -> 
         x_scale=1e-6,
         y_scale=1e-6,
         format=sdfio.FileFormat.ASCII,
-        metadata=sdfio.SdfMetadata(dialect=sdfio.SdfDialect.ISO_1_0),
+        metadata=sdfio.Metadata(revision=sdfio.Revision.ISO_1_0),
         trailer="Note = keep me",
     )
 
-    args = ["convert", str(source), str(destination), "--dialect", "ISO-2.0", "-x"]
+    args = ["convert", str(source), str(destination), "--revision", "ISO-2.0", "-x"]
     assert main(args) == 0
 
     converted = sdfio.read(destination)
@@ -301,27 +321,27 @@ def test_cli_convert_changes_from_bcr_to_iso_2_0(tmp_path: Path) -> None:
         np.ones((2, 2)),
         x_scale=1e-6,
         y_scale=1e-6,
-        metadata=sdfio.SdfMetadata(dialect=sdfio.SdfDialect.BCR_1_0),
+        metadata=sdfio.Metadata(revision=sdfio.Revision.BCR_1_0),
     )
 
-    assert main(["convert", str(source), str(destination), "--dialect", "ISO-2.0"]) == 0
+    assert main(["convert", str(source), str(destination), "--revision", "ISO-2.0"]) == 0
 
     converted = sdfio.read(destination)
-    assert converted.header.dialect == sdfio.SdfDialect.ISO_2_0
+    assert converted.header.revision == sdfio.Revision.ISO_2_0
 
 
 @pytest.mark.parametrize("target", ["XYZ-9.9", "BCR-2.0"])
 def test_cli_convert_rejects_unrecognized_target(
     target: str, capsys: pytest.CaptureFixture[str]
 ) -> None:
-    # Neither a wholly unknown dialect string nor a recognized-but-invalid
+    # Neither a wholly unknown revision string nor a recognized-but-invalid
     # combination (BCR never had version 2.0, so "BCR-2.0" isn't a valid
-    # SdfDialect member) is constructible -- both are rejected by argument
+    # Revision member) is constructible -- both are rejected by argument
     # parsing itself, before a source file is even read.
     with pytest.raises(SystemExit) as exc_info:
-        main(["convert", "in.sdf", "out.sdf", "--dialect", target])
+        main(["convert", "in.sdf", "out.sdf", "--revision", target])
     assert exc_info.value.code == 2
-    assert "invalid dialect" in capsys.readouterr().err
+    assert "invalid revision" in capsys.readouterr().err
 
 
 def test_cli_version(capsys: pytest.CaptureFixture[str]) -> None:

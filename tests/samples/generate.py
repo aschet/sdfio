@@ -4,8 +4,8 @@
 
 """Make the sample files of this folder: ``python tests/samples/generate.py``.
 
-Profiles and surfaces are made in each dialect of the format, in the ASCII and in the binary
-representation, with the data types that the dialect defines. The data is synthetic and does not
+Profiles and surfaces are made in each revision of the format, in the ASCII and in the binary
+representation, with the data types that the revision defines. The data is synthetic and does not
 depend on the version of sdfio, so the files only change when this script does.
 """
 
@@ -19,20 +19,20 @@ from pathlib import Path
 import numpy as np
 
 import sdfio
-from sdfio import DataType, FileFormat, SdfDialect, SdfMetadata
+from sdfio import DataType, FileFormat, Metadata, Revision
 
 FOLDER = Path(__file__).parent
-#: The folder of each dialect, named after the document that defines it: ISO 25178-71:2026
+#: The folder of each revision, named after the document that defines it: ISO 25178-71:2026
 #: specifies the versions 1.0 and 2.0.
 FOLDERS = {
-    SdfDialect.ISO_1_0: FOLDER / "iso25178-71-2026",
-    SdfDialect.ISO_2_0: FOLDER / "iso25178-71-2026",
-    SdfDialect.BCR_1_0: FOLDER / "bcr-1.0",
+    Revision.ISO_1_0: FOLDER / "iso25178-71-2026",
+    Revision.ISO_2_0: FOLDER / "iso25178-71-2026",
+    Revision.BCR_1_0: FOLDER / "bcr-1.0",
 }
-#: The start of the name of the files of each dialect, as the folder holds several.
-PREFIXES = {SdfDialect.ISO_1_0: "iso1", SdfDialect.ISO_2_0: "iso2", SdfDialect.BCR_1_0: "bcr1"}
+#: The start of the name of the files of each revision, as the folder holds several.
+PREFIXES = {Revision.ISO_1_0: "iso1", Revision.ISO_2_0: "iso2", Revision.BCR_1_0: "bcr1"}
 FORMATS = {"ascii": FileFormat.ASCII, "binary": FileFormat.BINARY}
-#: A time that does not depend on when the files are made: UTC for the dialect that requires it,
+#: A time that does not depend on when the files are made: UTC for the revision that requires it,
 #: and a time without a zone, which is written as it is, for the others.
 _DATE = datetime(2026, 1, 1, 12, 0)
 
@@ -92,12 +92,12 @@ def _with_missing_points(data: np.ndarray) -> np.ndarray:
 
 
 def trailer() -> str:
-    """Return the trailer of the sample that has one, as ``Name = Value`` fields in all dialects."""
+    """Return the trailer of the sample that has one, as ``Name = Value`` fields."""
     return sdfio.format_tagged_fields({"OperatorName": "Jane Doe", "PartName": "Synthetic bumps"})
 
 
-def build(dialect: SdfDialect) -> dict[str, Sample]:
-    """Return the samples of a dialect by name, without the suffix of the representation."""
+def build(revision: Revision) -> dict[str, Sample]:
+    """Return the samples of a revision by name, without the suffix of the representation."""
     surface = _surface()
     missing = _with_missing_points(surface)
     samples = {
@@ -115,13 +115,13 @@ def build(dialect: SdfDialect) -> dict[str, Sample]:
         "surface_int32": Sample("The same surface, int32", missing, DataType.INT32),
         "surface_binary64": Sample("The same surface, binary64", missing, DataType.BINARY64),
     }
-    if dialect is SdfDialect.ISO_2_0:
+    if revision is Revision.ISO_2_0:
         # The data types that version 2.0 adds.
         samples["surface_binary32"] = Sample(
             "The same surface, binary32", missing, DataType.BINARY32
         )
         samples["surface_int8"] = Sample("The same surface, int8", missing, DataType.INT8)
-    if dialect is SdfDialect.BCR_1_0:
+    if revision is Revision.BCR_1_0:
         # An unsigned type cannot hold negative heights, so the surface lies above zero.
         samples["surface_uint16"] = Sample(
             "The same surface above zero, uint16",
@@ -131,9 +131,9 @@ def build(dialect: SdfDialect) -> dict[str, Sample]:
     return samples
 
 
-def dumps(dialect: SdfDialect, sample: Sample, file_format: FileFormat) -> bytes:
-    """Return the content of a sample file in a dialect and representation."""
-    created = _DATE.replace(tzinfo=UTC) if dialect.requires_utc else _DATE
+def dumps(revision: Revision, sample: Sample, file_format: FileFormat) -> bytes:
+    """Return the content of a sample file in a revision and representation."""
+    created = _DATE.replace(tzinfo=UTC) if revision.rules.requires_utc else _DATE
     z_scale = Z_SCALES[sample.data_type]
     is_integer = sample.data_type not in (DataType.BINARY32, DataType.BINARY64)
     buffer = io.BytesIO()
@@ -144,8 +144,8 @@ def dumps(dialect: SdfDialect, sample: Sample, file_format: FileFormat) -> bytes
         y_scale=Y_SCALE,
         z_scale=z_scale,
         format=file_format,
-        metadata=SdfMetadata(
-            dialect=dialect,
+        metadata=Metadata(
+            revision=revision,
             manufacturer_id="sdfio",
             create_date=created,
             mod_date=created,
@@ -157,9 +157,9 @@ def dumps(dialect: SdfDialect, sample: Sample, file_format: FileFormat) -> bytes
     return buffer.getvalue()
 
 
-def path(dialect: SdfDialect, name: str, suffix: str) -> Path:
-    """Return the path of a sample file, by dialect, name and suffix of the representation."""
-    return FOLDERS[dialect] / f"{PREFIXES[dialect]}_{name}_{suffix}.sdf"
+def path(revision: Revision, name: str, suffix: str) -> Path:
+    """Return the path of a sample file, by revision, name and suffix of the representation."""
+    return FOLDERS[revision] / f"{PREFIXES[revision]}_{name}_{suffix}.sdf"
 
 
 def main() -> None:
@@ -168,10 +168,10 @@ def main() -> None:
         folder.mkdir(exist_ok=True)
         for old in folder.glob("*.sdf"):
             old.unlink()
-    for dialect in FOLDERS:
-        for name, sample in build(dialect).items():
+    for revision in FOLDERS:
+        for name, sample in build(revision).items():
             for suffix, file_format in FORMATS.items():
-                path(dialect, name, suffix).write_bytes(dumps(dialect, sample, file_format))
+                path(revision, name, suffix).write_bytes(dumps(revision, sample, file_format))
 
 
 if __name__ == "__main__":

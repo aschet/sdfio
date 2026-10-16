@@ -11,45 +11,35 @@ import struct
 from typing import IO
 
 import numpy as np
+from numpy.typing import NDArray
 
-from .datatypes import decode_raw, encode_raw, require_supported_data_type
+from ._datatypes import decode_raw, encode_raw, require_supported_data_type
+from ._dates import format_sdf_datetime, parse_sdf_datetime
+from ._validation import validate_check_type, validate_compression, validate_for_write
 from .exceptions import SdfFormatError
-from .header import (
-    ASCII_PREFIX,
-    BINARY_PREFIX,
-    MAGIC_SIZE,
-    SdfDialect,
-    SdfHeader,
-    format_sdf_datetime,
-    parse_sdf_datetime,
-    validate_check_type,
-    validate_compression,
-    validate_manufacturer_id_ascii,
-    validate_trailer_ascii,
-    validate_trailer_tagged,
-    validate_z_scale,
-)
+from .header import Header
+from .revision import ASCII_PREFIX, BINARY_PREFIX, MAGIC_SIZE, FileFormat, Revision
 
 __all__ = ["HEADER_SIZE", "dump", "dumps", "load", "loads"]
 
 # Field widths from the standard's record 1 header field table.
-_DIALECT_SIZE = len("ISO")  # == len("BCR")
-_MAGIC_PREFIX_SIZE = 1 + _DIALECT_SIZE + 1  # a/b + dialect + '-'
+_FAMILY_SIZE = len("ISO")  # == len("BCR")
+_MAGIC_PREFIX_SIZE = 1 + _FAMILY_SIZE + 1  # a/b + family + '-'
 _MANUFACTURER_ID_SIZE = 10
 _DATE_SIZE = 12
 
 _STRINGS_STRUCT = struct.Struct(f"<{_MANUFACTURER_ID_SIZE}s{_DATE_SIZE}s{_DATE_SIZE}s")
 _TAIL_STRUCT = struct.Struct("<ddddBBB")
 _COUNTS_STRUCT = {
-    SdfDialect.ISO_1_0: struct.Struct("<HH"),
-    SdfDialect.ISO_2_0: struct.Struct("<II"),
-    SdfDialect.BCR_1_0: struct.Struct("<HH"),
+    Revision.ISO_1_0: struct.Struct("<HH"),
+    Revision.ISO_2_0: struct.Struct("<II"),
+    Revision.BCR_1_0: struct.Struct("<HH"),
 }
 
-#: Total header size in bytes for each SDF dialect.
+#: Total header size in bytes for each SDF revision.
 HEADER_SIZE = {
-    dialect: MAGIC_SIZE + _STRINGS_STRUCT.size + counts_struct.size + _TAIL_STRUCT.size
-    for dialect, counts_struct in _COUNTS_STRUCT.items()
+    revision: MAGIC_SIZE + _STRINGS_STRUCT.size + counts_struct.size + _TAIL_STRUCT.size
+    for revision, counts_struct in _COUNTS_STRUCT.items()
 }
 
 
@@ -62,23 +52,27 @@ def _pad(value: str, length: int) -> bytes:
     return value.encode("ascii")[:length].ljust(length, b" ")
 
 
-def load(fp: IO[bytes]) -> tuple[SdfHeader, np.ndarray, bytes]:
-    """Parse a binary SDF file object opened in binary mode.
+def _read_header_bytes(fp: IO[bytes], size: int) -> bytes:
+    """Read exactly ``size`` bytes of the header.
 
-    :param fp: File object to read from, positioned at the start of the file.
-    :returns: A ``(header, data, trailer)`` tuple. ``data`` is a
-        ``(num_profiles, num_points)`` array of height values in metres,
-        with ``NaN`` marking non-measured or spurious points.
-    :raises SdfFormatError: If the file is malformed, e.g. a bad magic,
-        unsupported dialect or data type, or wrong data length. The trailer
-        is not validated on read; it is returned as-is even if not 7-bit
-        ASCII. ``ManufacID`` is truncated at the first NUL byte: BCR-1.0 lets
-        a string shorter than its field be NUL-terminated, and some ISO
-        writers do the same instead of space-padding it as ISO requires.
+    :raises SdfFormatError: If the file ends before.
     """
-    magic = fp.read(MAGIC_SIZE)
-    if len(magic) != MAGIC_SIZE:
+    data = fp.read(size)
+    if len(data) != size:
         raise SdfFormatError("File is too short to contain an SDF header")
+    return data
+
+
+def load(fp: IO[bytes]) -> tuple[Header, NDArray[np.float64], bytes]:
+    """Parse a binary SDF file.
+
+    :param fp: A binary stream at the start of the file.
+    :returns: The header, the data and the trailer, which is not validated on read and may not
+        be 7-bit ASCII.
+    :raises SdfFormatError: If the file is malformed, such as a bad magic, an unsupported
+        revision or data type, or an end within the header or the data area.
+    """
+    magic = _read_header_bytes(fp, MAGIC_SIZE)
     magic_text = magic.decode("ascii", errors="replace")
     if (
         len(magic_text) != MAGIC_SIZE
@@ -86,15 +80,17 @@ def load(fp: IO[bytes]) -> tuple[SdfHeader, np.ndarray, bytes]:
         or magic_text[4] != "-"
     ):
         raise SdfFormatError(f"Not an SDF file, unexpected magic: {magic_text!r}")
-    dialect_text = magic_text[1:4]
+    family_text = magic_text[1:4]
     version_text = magic_text[_MAGIC_PREFIX_SIZE:]
-    dialect = SdfDialect.resolve(dialect_text, version_text, magic_text)
+    revision = Revision.resolve(family_text, version_text, magic_text)
     if magic_text[0].lower() != BINARY_PREFIX:
         raise SdfFormatError("ASCII magic found while parsing a binary SDF file")
 
-    manufacturer_raw, create_raw, mod_raw = _STRINGS_STRUCT.unpack(fp.read(_STRINGS_STRUCT.size))
-    counts_struct = _COUNTS_STRUCT[dialect]
-    num_points, num_profiles = counts_struct.unpack(fp.read(counts_struct.size))
+    manufacturer_raw, create_raw, mod_raw = _STRINGS_STRUCT.unpack(
+        _read_header_bytes(fp, _STRINGS_STRUCT.size)
+    )
+    counts_struct = _COUNTS_STRUCT[revision]
+    num_points, num_profiles = counts_struct.unpack(_read_header_bytes(fp, counts_struct.size))
     (
         x_scale,
         y_scale,
@@ -103,92 +99,71 @@ def load(fp: IO[bytes]) -> tuple[SdfHeader, np.ndarray, bytes]:
         compression,
         data_type_code,
         check_type,
-    ) = _TAIL_STRUCT.unpack(fp.read(_TAIL_STRUCT.size))
+    ) = _TAIL_STRUCT.unpack(_read_header_bytes(fp, _TAIL_STRUCT.size))
     validate_compression(compression)
     validate_check_type(check_type)
 
-    data_type = require_supported_data_type(data_type_code, dialect)
+    data_type = require_supported_data_type(data_type_code, revision)
 
-    # errors="replace" here is a deliberate read-side leniency (unlike the
-    # trailer, ManufacID/dates are not re-validated as ASCII on read) so a
-    # file that's merely non-compliant here can still be opened and
-    # inspected; only *writing* one is rejected (validate_manufacturer_id_ascii).
-    # ManufacID is truncated at the first NUL byte before decoding: BCR-1.0
-    # lets a string shorter than its field be NUL-terminated (what follows is
-    # undefined), while ISO requires space-padding. Some ISO writers follow the
-    # BCR rule; truncating handles both and keeps the undefined bytes out of
-    # the decoded value.
-    header = SdfHeader(
-        dialect=dialect,
-        binary=True,
+    # Leniency on read: ManufacID and the dates are not checked for ASCII, so that a file with
+    # such a field can be opened and inspected; writing one is rejected. ManufacID ends at the
+    # first NUL: BCR allows a short string to be NUL-terminated, ISO requires space padding, and
+    # some ISO writers use NUL. Cutting at it handles both and drops the undefined bytes.
+    header = Header._read(
+        revision=revision,
+        format=FileFormat.BINARY,
         manufacturer_id=manufacturer_raw.split(b"\x00", 1)[0]
         .decode("ascii", errors="replace")
         .rstrip(),
-        create_date=parse_sdf_datetime(create_raw.decode("ascii", errors="replace"), dialect),
-        mod_date=parse_sdf_datetime(mod_raw.decode("ascii", errors="replace"), dialect),
-        num_points=num_points,
-        num_profiles=num_profiles,
+        create_date=parse_sdf_datetime(create_raw.decode("ascii", errors="replace"), revision),
+        mod_date=parse_sdf_datetime(mod_raw.decode("ascii", errors="replace"), revision),
         x_scale=x_scale,
         y_scale=y_scale,
         z_scale=z_scale,
         z_resolution=z_resolution,
-        data_type=data_type_code,
+        data_type=data_type.type,
     )
 
-    count = header.num_points * header.num_profiles
+    # The data area and the trailer are read together and split, instead of asking for the size
+    # that the header claims: a damaged header can name a size that no file holds, which is not
+    # something to pass to read().
+    count = num_points * num_profiles
     byte_count = count * data_type.dtype.itemsize
-    raw_bytes = fp.read(byte_count)
-    if len(raw_bytes) != byte_count:
+    rest = fp.read()
+    if len(rest) < byte_count:
         raise SdfFormatError("Unexpected end of file while reading the SDF data area")
-    raw = np.frombuffer(raw_bytes, dtype=data_type.dtype)
-    data = decode_raw(raw, data_type, header.z_scale, dialect).reshape(
-        header.num_profiles, header.num_points
-    )
-    if dialect.reverses_profile_order:
-        data = data[::-1]
+    raw = np.frombuffer(rest, dtype=data_type.dtype, count=count)
+    data = decode_raw(raw, data_type, header.z_scale, revision).reshape(num_profiles, num_points)
+    data = revision.rules.order_rows(data)
 
-    # Not validated on read, unlike on write: the trailer is secondary to
-    # the header/data area, and a non-compliant trailer in an otherwise
-    # valid file shouldn't prevent reading the (already successfully
-    # decoded) depth data.
-    trailer = fp.read()
+    # Not validated on read: a bad trailer must not prevent reading the heights.
+    trailer = rest[byte_count:]
     return header, data, trailer
 
 
-def dump(header: SdfHeader, data: np.ndarray, fp: IO[bytes], trailer: bytes = b"") -> None:
+def dump(header: Header, data: NDArray[np.float64], fp: IO[bytes], trailer: bytes = b"") -> None:
     """Serialize a header/data pair to the binary SDF representation.
 
-    :param header: Header describing ``data``; ``header.binary`` is ignored.
+    :param header: Header describing ``data``; ``header.format`` is ignored.
     :param data: ``(num_profiles, num_points)`` array of height values in
         metres. ``NaN`` marks non-measured or spurious points.
     :param trailer: Optional raw record 3 trailer content.
     """
-    if data.shape != header.shape:
-        raise SdfFormatError(f"Data shape {data.shape} does not match header shape {header.shape}")
-    if header.dialect not in _COUNTS_STRUCT:
-        raise SdfFormatError(f"Unsupported SDF dialect {header.dialect!r}")
-    validate_z_scale(header.z_scale)
-    validate_manufacturer_id_ascii(header.manufacturer_id)
-    validate_trailer_ascii(trailer)
-    validate_trailer_tagged(header.dialect, trailer)
-    data_type = require_supported_data_type(header.data_type, header.dialect)
+    data_type = validate_for_write(header, trailer)
 
-    fp.write(f"{BINARY_PREFIX}{header.dialect}".encode("ascii"))
+    fp.write(f"{BINARY_PREFIX}{header.revision}".encode("ascii"))
     fp.write(_pad(header.manufacturer_id, _MANUFACTURER_ID_SIZE))
-    fp.write(_pad(format_sdf_datetime(header.create_date, header.dialect), _DATE_SIZE))
-    fp.write(_pad(format_sdf_datetime(header.mod_date, header.dialect), _DATE_SIZE))
-    counts_struct = _COUNTS_STRUCT[header.dialect]
-    # counts_struct.size is NumPoints+NumProfiles combined (e.g. 4 bytes for
-    # ISO-1.0/BCR-1.0's two uint16 fields); halving it gives one field's byte
-    # width, and from that its max unsigned value (65535 for uint16, 2**32-1
-    # for uint32).
-    max_count = 2 ** (8 * (counts_struct.size // 2)) - 1
-    if not (0 <= header.num_points <= max_count and 0 <= header.num_profiles <= max_count):
+    fp.write(_pad(format_sdf_datetime(header.create_date, header.revision), _DATE_SIZE))
+    fp.write(_pad(format_sdf_datetime(header.mod_date, header.revision), _DATE_SIZE))
+    counts_struct = _COUNTS_STRUCT[header.revision]
+    max_count = header.revision.rules.max_binary_count
+    num_profiles, num_points = data.shape
+    if max(data.shape) > max_count:
         raise SdfFormatError(
             f"NumPoints/NumProfiles must be between 0 and {max_count} for SDF "
-            f"dialect {header.dialect} (binary format)"
+            f"revision {header.revision} (binary format)"
         )
-    fp.write(counts_struct.pack(header.num_points, header.num_profiles))
+    fp.write(counts_struct.pack(num_points, num_profiles))
     fp.write(
         _TAIL_STRUCT.pack(
             header.x_scale,
@@ -197,19 +172,19 @@ def dump(header: SdfHeader, data: np.ndarray, fp: IO[bytes], trailer: bytes = b"
             header.z_resolution,
             0,  # Compression: never supported, always written as 0.
             header.data_type,
-            0,  # CheckType: never written, always 0 (see SdfHeader's docstring).
+            0,  # CheckType: never written, always 0 (see Header's docstring).
         )
     )
 
-    write_data = data[::-1] if header.dialect.reverses_profile_order else data
-    raw = encode_raw(write_data, data_type, header.z_scale, header.dialect)
+    write_data = header.revision.rules.order_rows(data)
+    raw = encode_raw(write_data, data_type, header.z_scale, header.revision)
     fp.write(raw.tobytes())
 
     if trailer:
         fp.write(trailer)
 
 
-def loads(data: bytes) -> tuple[SdfHeader, np.ndarray, bytes]:
+def loads(data: bytes) -> tuple[Header, NDArray[np.float64], bytes]:
     """Parse an in-memory binary SDF blob.
 
     Equivalent to :func:`load`, reading from an in-memory ``data`` buffer.
@@ -221,10 +196,10 @@ def loads(data: bytes) -> tuple[SdfHeader, np.ndarray, bytes]:
     return load(io.BytesIO(data))
 
 
-def dumps(header: SdfHeader, data: np.ndarray, trailer: bytes = b"") -> bytes:
+def dumps(header: Header, data: NDArray[np.float64], trailer: bytes = b"") -> bytes:
     """Serialize a header/data pair to an in-memory binary SDF blob.
 
-    :param header: Header describing ``data``; ``header.binary`` is ignored.
+    :param header: Header describing ``data``; ``header.format`` is ignored.
     :param data: ``(num_profiles, num_points)`` array of height values in
         metres. ``NaN`` marks non-measured or spurious points.
     :param trailer: Optional raw record 3 trailer content.

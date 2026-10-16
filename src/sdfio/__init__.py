@@ -22,7 +22,7 @@ Basic usage::
     >>> sdf.data.shape
     (2, 3)
     >>> sdf.header.z_scale
-    1e-06
+    1.0
 
 The examples below write to memory, so that they leave no files behind.
 
@@ -47,19 +47,19 @@ A profile is a surface with one row::
     >>> sdfio.read(io.BytesIO(buffer.getvalue())).data.shape
     (1, 100)
 
-The file is described by the header. The dialect, the data type, the manufacturer, the dates and
+The file is described by the header. The revision, the data type, the manufacturer, the dates and
 the quantization step come from a template, and the representation from ``format``. The heights
-are stored as integers of ``data_type`` times ``z_scale``, which ``"auto"`` chooses as the
-smallest scale that fits the data::
+are stored as integers of ``data_type`` times ``z_scale``, which is by default the smallest
+scale that fits the data::
 
-    >>> metadata = sdfio.SdfMetadata(
-    ...     dialect=sdfio.SdfDialect.ISO_2_0,
+    >>> metadata = sdfio.Metadata(
+    ...     revision=sdfio.Revision.ISO_2_0,
     ...     manufacturer_id="acme",
     ...     data_type=sdfio.DataType.INT16,
     ... )
     >>> buffer = io.BytesIO()
     >>> sdfio.write(
-    ...     buffer, heights, x_scale=2e-6, y_scale=3e-6, z_scale="auto",
+    ...     buffer, heights, x_scale=2e-6, y_scale=3e-6,
     ...     format=sdfio.FileFormat.ASCII, metadata=metadata,
     ... )
     >>> text = buffer.getvalue().decode("ascii")
@@ -73,15 +73,15 @@ The trailer holds free text, or "Name = Value" fields, which ISO-2.0 requires::
     >>> sdfio.read(io.BytesIO(sdf.dumps())).trailer_fields["OperatorName"]
     'Jane Doe'
 
-A file is converted to another dialect, data type or representation with
-:meth:`SdfFile.with_dialect` and :meth:`SdfFile.dumps`::
+A file is converted to another revision, data type or representation with
+:meth:`SdfFile.with_revision` and :meth:`SdfFile.dumps`::
 
-    >>> converted = sdf.with_dialect(sdfio.SdfDialect.ISO_1_0, trailer="")
-    >>> str(converted.header.dialect)
+    >>> converted = sdf.with_revision(sdfio.Revision.ISO_1_0, trailer="")
+    >>> str(converted.header.revision)
     'ISO-1.0'
     >>> binary = sdfio.read(io.BytesIO(converted.dumps(format=sdfio.FileFormat.BINARY)))
-    >>> binary.header.binary
-    True
+    >>> binary.header.format.name
+    'BINARY'
 
 :meth:`SdfFile.points` gives the points of the grid with their ``x`` and ``y`` coordinates, as the
 ``(rows, columns, 3)`` array that plotting libraries take. With ``drop_invalid`` it is the
@@ -98,54 +98,38 @@ A file is converted to another dialect, data type or representation with
 
 from __future__ import annotations
 
-from .datatypes import (
-    DATA_TYPES,
-    DataType,
-    SdfDataType,
-    decode_raw,
-    encode_raw,
-    get_data_type,
-    suggest_z_scale,
-)
+from ._datatypes import suggest_z_scale
 from .exceptions import SdfError, SdfFormatError, SdfVersionError
-from .file import FileFormat, SdfFile, read, write
-from .header import (
-    MAGICS,
-    SdfDialect,
-    SdfHeader,
-    SdfMetadata,
+from .file import SdfFile, read, write
+from .header import Header, Metadata
+from .revision import MAGICS, DataType, FileFormat, Revision, RevisionRules
+from .trailer import (
     format_tagged_fields,
     parse_tagged_fields,
     sanitize_tagged_fields,
-    validate_trailer_ascii,
     validate_trailer_tagged,
 )
 
 __all__ = [
-    "DATA_TYPES",
     "MAGICS",
     "DataType",
     "FileFormat",
-    "SdfDataType",
-    "SdfDialect",
+    "Header",
+    "Metadata",
+    "Revision",
+    "RevisionRules",
     "SdfError",
     "SdfFile",
     "SdfFormatError",
-    "SdfHeader",
-    "SdfMetadata",
     "SdfVersionError",
     "__version__",
-    "decode_raw",
-    "encode_raw",
     "format_tagged_fields",
-    "get_data_type",
     "parse_tagged_fields",
     "read",
     "sanitize_tagged_fields",
     "suggest_z_scale",
-    "validate_trailer_ascii",
     "validate_trailer_tagged",
     "write",
 ]
 
-__version__ = "1.4.0"
+__version__ = "2.0.0"

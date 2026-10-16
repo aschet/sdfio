@@ -13,9 +13,13 @@ class SdfError(Exception):
     """Base class for all sdfio errors."""
 
 
-class SdfFormatError(SdfError):
-    """Raised when file content does not conform to the SDF format."""
+class SdfFormatError(SdfError, ValueError):
+    """Raised when file content or a value given for a file is not valid in the SDF format.
+
+    It is a :class:`ValueError`, like :class:`json.JSONDecodeError`, so code that catches that
+    also catches a bad value passed to sdfio.
+    """
 
 
 class SdfVersionError(SdfFormatError):
-    """Raised when an SDF dialect string is not recognized."""
+    """Raised when an SDF revision string is not recognized."""

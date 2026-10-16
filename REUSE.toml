@@ -14,3 +14,8 @@ SPDX-License-Identifier = "MIT"
 path = ["tests/samples/*/*.sdf"]
 SPDX-FileCopyrightText = "2026 Thomas Ascher <thomas.ascher@gmx.at>"
 SPDX-License-Identifier = "CC0-1.0"
+
+[[annotations]]
+path = ["examples/*.py"]
+SPDX-FileCopyrightText = "2026 Thomas Ascher <thomas.ascher@gmx.at>"
+SPDX-License-Identifier = "0BSD"
