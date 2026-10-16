@@ -95,7 +95,7 @@ def _fix_trailer(text: str, revision: Revision) -> str:
     # first, then make any surviving field 7-bit ASCII. Other revisions have
     # no shape requirement at all -- imposing one would destroy legitimate
     # freeform content, so only ASCII-ness is fixed, line by line.
-    if revision.requires_tagged_trailer:
+    if revision.rules.requires_tagged_trailer:
         fields = {
             _ascii_safe(name): _ascii_safe(value)
             for name, value in parse_tagged_fields(sanitize_tagged_fields(text)).items()

@@ -328,14 +328,14 @@ def test_loads_accepts_upper_case_binary_prefix() -> None:
 @pytest.mark.parametrize("revision", list(Revision))
 def test_max_binary_count_is_what_the_binary_header_can_hold(revision: Revision) -> None:
     field_size = _binary._COUNTS_STRUCT[revision].size // 2  # NumPoints and NumProfiles
-    assert revision.max_binary_count == 2 ** (8 * field_size) - 1
+    assert revision.rules.max_binary_count == 2 ** (8 * field_size) - 1
 
 
 @pytest.mark.parametrize("revision", [Revision.ISO_1_0, Revision.BCR_1_0])
 def test_binary_files_of_the_older_revisions_hold_at_most_the_max_count(
     revision: Revision,
 ) -> None:
-    limit = revision.max_binary_count
+    limit = revision.rules.max_binary_count
     data_type = DataType.INT16
 
     def write(points: int, format: FileFormat) -> bytes:
@@ -405,7 +405,7 @@ def test_a_header_that_names_more_data_than_any_file_holds_is_a_format_error(
     blob = bytearray(_binary_file(revision))
     counts = _binary._COUNTS_STRUCT[revision]
     offset = 8 + 10 + 24  # the magic, the manufacturer's ID and the two dates
-    largest = revision.max_binary_count
+    largest = revision.rules.max_binary_count
     blob[offset : offset + counts.size] = counts.pack(largest, largest)
 
     with pytest.raises(SdfFormatError, match="Unexpected end of file"):

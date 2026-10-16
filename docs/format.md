@@ -27,7 +27,7 @@ sdfio reads and writes three revisions:
 | --- | --- | --- |
 | `BCR-1.0` | The 1993 proposal | Unsigned integer types. The maximum of a type marks a point that is not measured. ASCII files may have comments, and may name the data type instead of giving its code. Times have no time zone. |
 | `ISO-1.0` | ISO 25178-71:2017 and ISO 25178-71:2026 | The data types int16, int32 and binary64. The minimum of a type marks a point that is not measured, and the ASCII files write `BAD` for it. Times have no time zone. |
-| `ISO-2.0` | ISO 25178-71:2026 | The numbers of columns and rows are 4 bytes instead of 2, so the binary files hold up to 4294967295 of them instead of 65535 (`Revision.max_binary_count`); the standard sets no limit for the ASCII files. The data types int8 and binary32 are added. Times are UTC, and the trailer, if there is one, has the `Name = Value` form of the header. |
+| `ISO-2.0` | ISO 25178-71:2026 | The numbers of columns and rows are 4 bytes instead of 2, so the binary files hold up to 4294967295 of them instead of 65535 (`Revision.rules.max_binary_count`); the standard sets no limit for the ASCII files. The data types int8 and binary32 are added. Times are UTC, and the trailer, if there is one, has the `Name = Value` form of the header. |
 
 The header has fields for a compression and a checksum of the data. ISO-1.0 and ISO-2.0 have only the
 value for none, and BCR-1.0 also defines run-length-limited compression and a checksum of each

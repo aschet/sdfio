@@ -155,8 +155,7 @@ def load(fp: IO[bytes]) -> tuple[Header, np.ndarray, bytes]:
         raise SdfFormatError("Unexpected end of file while reading the SDF data area")
     raw = np.frombuffer(rest, dtype=data_type.dtype, count=count)
     data = decode_raw(raw, data_type, header.z_scale, revision).reshape(num_profiles, num_points)
-    if revision.reverses_profile_order:
-        data = data[::-1]
+    data = revision.rules.order_rows(data)
 
     # Not validated on read, unlike on write: the trailer is secondary to
     # the header/data area, and a non-compliant trailer in an otherwise
@@ -187,7 +186,7 @@ def dump(header: Header, data: np.ndarray, fp: IO[bytes], trailer: bytes = b"") 
     fp.write(_pad(format_sdf_datetime(header.create_date, header.revision), _DATE_SIZE))
     fp.write(_pad(format_sdf_datetime(header.mod_date, header.revision), _DATE_SIZE))
     counts_struct = _COUNTS_STRUCT[header.revision]
-    max_count = header.revision.max_binary_count
+    max_count = header.revision.rules.max_binary_count
     num_profiles, num_points = data.shape
     if max(data.shape) > max_count:
         raise SdfFormatError(
@@ -207,7 +206,7 @@ def dump(header: Header, data: np.ndarray, fp: IO[bytes], trailer: bytes = b"") 
         )
     )
 
-    write_data = data[::-1] if header.revision.reverses_profile_order else data
+    write_data = header.revision.rules.order_rows(data)
     raw = encode_raw(write_data, data_type, header.z_scale, header.revision)
     fp.write(raw.tobytes())
 

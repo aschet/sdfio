@@ -98,9 +98,9 @@ def test_magics_covers_every_revision_in_both_formats_and_prefix_cases() -> None
 
 
 def test_reverses_profile_order_is_bcr_only() -> None:
-    assert Revision.BCR_1_0.reverses_profile_order is True
-    assert Revision.ISO_1_0.reverses_profile_order is False
-    assert Revision.ISO_2_0.reverses_profile_order is False
+    assert Revision.BCR_1_0.rules.reverses_profile_order is True
+    assert Revision.ISO_1_0.rules.reverses_profile_order is False
+    assert Revision.ISO_2_0.rules.reverses_profile_order is False
 
 
 def test_header_defaults_are_valid_iso_revision() -> None:
@@ -284,3 +284,17 @@ def test_the_former_binary_flag_is_gone() -> None:
     with pytest.raises(TypeError):
         Header(binary=True)  # type: ignore[call-arg]
     assert not hasattr(Header(), "binary")
+
+
+def test_every_revision_has_rules() -> None:
+    assert [revision.rules.max_binary_count for revision in Revision] == [
+        2**16 - 1,
+        2**32 - 1,
+        2**16 - 1,
+    ]
+
+
+def test_order_rows_reverses_the_rows_for_bcr_only() -> None:
+    data = np.array([[1.0], [2.0]])
+    assert Revision.BCR_1_0.rules.order_rows(data).tolist() == [[2.0], [1.0]]
+    assert Revision.ISO_2_0.rules.order_rows(data).tolist() == [[1.0], [2.0]]

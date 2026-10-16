@@ -87,7 +87,7 @@ class SdfFile:
         """Y-axis coordinates in metres: ``y_i = (i - 1) * y_scale``, ``i = 1..num_profiles``.
 
         ``y`` increases with row index, per the standard's right-handed
-        coordinate system. :attr:`Revision.reverses_profile_order` is what
+        coordinate system. :attr:`RevisionRules.reverses_profile_order` is what
         keeps this true for BCR-1.0 too, despite its different on-disk row
         order.
 
@@ -180,7 +180,7 @@ class SdfFile:
           ``binary32``/``int8`` are ISO-2.0 only; BCR has no such
           restriction). Pass a compatible replacement if the current type
           isn't valid for ``revision``.
-        - Trailer: a revision for which :attr:`Revision.requires_tagged_trailer`
+        - Trailer: a revision for which :attr:`RevisionRules.requires_tagged_trailer`
           is ``True`` requires a tagged "Name = Value" trailer, or none at
           all; others have no such requirement. If the current trailer
           wouldn't be valid for ``revision``, pass a replacement (e.g. ``""``
@@ -314,7 +314,7 @@ class SdfFile:
         """Trailer content as "Name = Value" fields, the tagged format the header uses.
 
         Required on write for a revision whose
-        :attr:`Revision.requires_tagged_trailer` is ``True`` (ISO-2.0);
+        :attr:`RevisionRules.requires_tagged_trailer` is ``True`` (ISO-2.0);
         optional elsewhere.
 
         Never raises: a line that isn't "Name = Value" is silently dropped

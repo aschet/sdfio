@@ -133,7 +133,7 @@ def build(revision: Revision) -> dict[str, Sample]:
 
 def dumps(revision: Revision, sample: Sample, file_format: FileFormat) -> bytes:
     """Return the content of a sample file in a revision and representation."""
-    created = _DATE.replace(tzinfo=UTC) if revision.requires_utc else _DATE
+    created = _DATE.replace(tzinfo=UTC) if revision.rules.requires_utc else _DATE
     z_scale = Z_SCALES[sample.data_type]
     is_integer = sample.data_type not in (DataType.BINARY32, DataType.BINARY64)
     buffer = io.BytesIO()

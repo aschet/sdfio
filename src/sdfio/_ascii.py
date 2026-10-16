@@ -88,7 +88,7 @@ def _split_records(remainder: str, revision: Revision) -> list[str]:
     # With comments enabled, a "*" followed by a comment still terminates its
     # record, and the comment is dropped from the header and data records. The
     # trailer (third record) is free text, so it is kept verbatim.
-    comments = revision.allows_ascii_comments
+    comments = revision.rules.allows_ascii_comments
     records = []
     current: list[str] = []
     for line in _LINE_SPLIT_RE.split(remainder):
@@ -126,7 +126,7 @@ def _parse_coded(
     try:
         return int(value)
     except ValueError:
-        if revision.allows_symbolic_header_values and value.upper() in symbols:
+        if revision.rules.allows_symbolic_header_values and value.upper() in symbols:
             return int(symbols[value.upper()])
         raise SdfFormatError(
             f"Invalid integer value for SDF header field {name!r}: {value!r}"
@@ -171,7 +171,7 @@ def loads(text: str) -> tuple[Header, np.ndarray, str]:
     family_text = magic_match.group("family")
     version_text = magic_match.group("version")
     revision = Revision.resolve(family_text, version_text, magic_line)
-    if _COMMENT_MARKER in magic_line and not revision.allows_ascii_comments:
+    if _COMMENT_MARKER in magic_line and not revision.rules.allows_ascii_comments:
         raise SdfFormatError(f"Not an ASCII SDF file, unexpected magic: {magic_line!r}")
 
     records = _split_records(remainder, revision)
@@ -239,14 +239,14 @@ def _parse_data(
                 raise SdfFormatError(f"Invalid data value at position {index}: {token!r}") from None
 
     invalid_mask = np.isnan(values)
-    if not header.revision.has_ascii_invalid_token:
+    if not header.revision.rules.has_ascii_invalid_token:
         # BCR marks a bad point with the type's maximum value, as a number.
         invalid_mask |= data_type.is_invalid(values, header.revision)
     # NaN before scaling: a huge marker value could overflow when scaled.
     values[invalid_mask] = np.nan
     with np.errstate(invalid="ignore", over="ignore"):  # see decode_raw
         data = (values * header.z_scale).reshape(shape)
-    return data[::-1] if header.revision.reverses_profile_order else data
+    return header.revision.rules.order_rows(data)
 
 
 def load(fp: IO[str]) -> tuple[Header, np.ndarray, str]:
@@ -259,7 +259,7 @@ def load(fp: IO[str]) -> tuple[Header, np.ndarray, str]:
 
 def _format_value(value: float, data_type: DataTypeInfo, revision: Revision) -> str:
     if np.isnan(value):
-        if revision.has_ascii_invalid_token:
+        if revision.rules.has_ascii_invalid_token:
             return _INVALID_MARKER
         value = data_type.ascii_invalid_value(revision)
     if data_type.type == DataType.BINARY32:
@@ -308,7 +308,7 @@ def dumps(header: Header, data: np.ndarray, trailer: str = "") -> str:
         lines.append(f"{name} = {value}")
     lines.append("*")
 
-    write_data = data[::-1] if header.revision.reverses_profile_order else data
+    write_data = header.revision.rules.order_rows(data)
     raw = write_data / header.z_scale
     validate_data_range(raw, np.isnan(write_data), data_type, header.revision)
     for row in raw:
