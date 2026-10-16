@@ -6,22 +6,19 @@
 
 from __future__ import annotations
 
-import codecs
-import os
 from collections.abc import Mapping
 from dataclasses import dataclass, fields, replace
 from datetime import UTC, datetime
-from pathlib import Path
 from types import MappingProxyType
-from typing import IO, Literal
+from typing import Literal
 
 import numpy as np
 
-from . import _ascii, _binary
+from . import _io
 from .datatypes import DataType, encode_raw, get_data_type, suggest_z_scale
 from .exceptions import SdfFormatError
 from .header import Header, Metadata
-from .revision import ASCII_PREFIX, BINARY_PREFIX, MAGIC_SIZE, FileFormat, Revision
+from .revision import FileFormat, Revision
 from .trailer import (
     format_tagged_fields,
     parse_tagged_fields,
@@ -29,10 +26,9 @@ from .trailer import (
     validate_trailer_tagged,
 )
 
-__all__ = ["FileFormat", "SdfFile", "read", "write"]
+__all__ = ["SdfFile", "read", "write"]
 
-PathLike = str | os.PathLike[str]
-PathOrStream = PathLike | IO[bytes]
+PathOrStream = _io.PathOrStream
 
 
 # eq=False: dataclass's auto __eq__ would do `data == other.data`, which
@@ -335,7 +331,7 @@ class SdfFile:
         """
         # sanitize_tagged_fields() already guarantees clean "Name = Value"
         # text, so parse_tagged_fields() here can never raise.
-        sanitized = sanitize_tagged_fields(_as_text(self.trailer))
+        sanitized = sanitize_tagged_fields(_io.as_text(self.trailer))
         return MappingProxyType(parse_tagged_fields(sanitized))
 
     @trailer_fields.setter
@@ -415,18 +411,7 @@ class SdfFile:
         :raises SdfFormatError: If ``data`` does not start with a recognized
             SDF magic, or its contents are otherwise malformed.
         """
-        data = data.removeprefix(codecs.BOM_UTF8)
-        ascii_prefix = ASCII_PREFIX.encode("ascii")
-        binary_prefix = BINARY_PREFIX.encode("ascii")
-        prefix = data[:1].lower()
-        if len(data) < MAGIC_SIZE or prefix not in (ascii_prefix, binary_prefix):
-            raise SdfFormatError("Not an SDF file, unexpected magic")
-
-        trailer: str | bytes
-        if prefix == binary_prefix:
-            header, values, trailer = _binary.loads(data)
-        else:
-            header, values, trailer = _ascii.loads(data.decode("ascii", errors="replace"))
+        header, values, trailer = _io.decode(data)
         return cls(header=header, data=values, trailer=trailer)
 
     @classmethod
@@ -438,7 +423,7 @@ class SdfFile:
         :raises SdfFormatError: If the file does not start with a recognized
             SDF magic, or its contents are otherwise malformed.
         """
-        return cls.loads(_read_bytes(path))
+        return cls.loads(_io.read_bytes(path))
 
     def dumps(self, *, format: FileFormat | None = None) -> bytes:
         """Serialize this file to an in-memory blob, overriding the ASCII/binary format if given.
@@ -457,9 +442,7 @@ class SdfFile:
         if format is not None and not isinstance(format, FileFormat):
             raise TypeError(f"format must be a FileFormat member, got {format!r}")
         header = replace(self.header, format=self.header.format if format is None else format)
-        if header.format is FileFormat.BINARY:
-            return _binary.dumps(header, self.data, _as_bytes(self.trailer))
-        return _ascii.dumps(header, self.data, _as_text(self.trailer)).encode("ascii")
+        return _io.encode(header, self.data, self.trailer)
 
     def save(self, path: PathOrStream, *, format: FileFormat | None = None) -> None:
         """Write this file to disk or a binary stream, optionally overriding the format.
@@ -469,7 +452,7 @@ class SdfFile:
             ``header.format`` if constructed directly).
         :raises SdfFormatError: See :meth:`dumps`.
         """
-        _write_bytes(path, self.dumps(format=format))
+        _io.write_bytes(path, self.dumps(format=format))
 
 
 def _as_grid(data: object) -> np.ndarray:
@@ -477,30 +460,6 @@ def _as_grid(data: object) -> np.ndarray:
     if array.ndim != 2:
         raise SdfFormatError("SDF data must be a 2-D (num_profiles, num_points) array")
     return array
-
-
-def _read_bytes(source: PathOrStream) -> bytes:
-    if isinstance(source, (str, os.PathLike)):
-        return Path(source).read_bytes()
-    return source.read()
-
-
-def _write_bytes(destination: PathOrStream, data: bytes) -> None:
-    if isinstance(destination, (str, os.PathLike)):
-        Path(destination).write_bytes(data)
-    else:
-        destination.write(data)
-
-
-def _as_bytes(trailer: str | bytes) -> bytes:
-    # A lossless str<->bytes bridge only -- validate_trailer_ascii() in
-    # _ascii.py/_binary.py enforces the SDF trailer's ASCII-only requirement
-    # when writing; this itself stays lenient by design.
-    return trailer if isinstance(trailer, bytes) else trailer.encode("utf-8")
-
-
-def _as_text(trailer: str | bytes) -> str:
-    return trailer if isinstance(trailer, str) else trailer.decode("utf-8", errors="replace")
 
 
 def read(path: PathOrStream) -> SdfFile:
