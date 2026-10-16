@@ -2,21 +2,18 @@
 #
 # SPDX-License-Identifier: MIT
 
-"""Revisions and representations of the SDF format."""
+"""Revisions, representations and data type codes of the SDF format."""
 
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, replace
-from enum import Enum, StrEnum, auto
-from typing import TYPE_CHECKING, Final
+from enum import Enum, IntEnum, StrEnum, auto
+from typing import Final
 
 import numpy as np
 
 from .exceptions import SdfFormatError
-
-if TYPE_CHECKING:
-    from .datatypes import DataType
 
 __all__ = [
     "ASCII_PREFIX",
@@ -24,6 +21,7 @@ __all__ = [
     "MAGICS",
     "MAGIC_SIZE",
     "AsciiRules",
+    "DataType",
     "FileFormat",
     "Revision",
     "RevisionRules",
@@ -71,20 +69,26 @@ class Revision(StrEnum):
             ) from None
 
     @property
-    def data_types(self) -> tuple[DataType, ...]:
-        """Return the data types of the data area that this revision has, by their codes.
-
-        >>> [data_type.name for data_type in Revision.ISO_1_0.data_types]
-        ['INT16', 'INT32', 'BINARY64']
-        """
-        from .datatypes import DATA_TYPES  # datatypes needs this module for its table
-
-        return tuple(data_type for data_type, info in DATA_TYPES.items() if info.is_supported(self))
-
-    @property
     def rules(self) -> RevisionRules:
         """How this revision differs from the others, see :class:`RevisionRules`."""
         return _RULES[self]
+
+
+class DataType(IntEnum):
+    """Storage types of the data area, by their ``DataType`` code in the header.
+
+    Codes 0 to 2 are the unsigned integer types of BCR-1.0, which ISO dropped. Which revision has
+    which type is :attr:`RevisionRules.data_types`.
+    """
+
+    UINT8 = 0
+    UINT16 = 1
+    UINT32 = 2
+    BINARY32 = 3
+    INT8 = 4
+    INT16 = 5
+    INT32 = 6
+    BINARY64 = 7
 
 
 class Sentinel(ABC):
@@ -198,6 +202,7 @@ class RevisionRules:
     :param sentinel: How a point that was not measured is marked in the raw values: ISO reserves
         the minimum of a data type, and the 1993 BCR proposal the maximum, since it still had
         unsigned integer types whose minimum (0) is a valid low bound.
+    :param data_types: The data types the revision has, by their codes.
     :param ascii: What the ASCII encoding allows, see :class:`AsciiRules`.
     :param reverses_profile_order: Whether the first profile stored on disk is at the maximum y,
         not at y=0. BCR never fixed a direction; ISO 25178-71 fixed row 1 at y=0. This reflects
@@ -205,6 +210,8 @@ class RevisionRules:
         profile at the maximum y, and sdfio matches that on read and write, so
         :attr:`SdfFile.y_axis` increases with the row for every revision.
 
+    >>> [data_type.name for data_type in Revision.ISO_1_0.rules.data_types]
+    ['INT16', 'INT32', 'BINARY64']
     >>> Revision.ISO_1_0.rules.max_binary_count
     65535
     >>> Revision.ISO_2_0.rules.max_binary_count
@@ -215,6 +222,7 @@ class RevisionRules:
     max_binary_count: int
     requires_tagged_trailer: bool
     sentinel: Sentinel
+    data_types: tuple[DataType, ...]
     ascii: AsciiRules
     reverses_profile_order: bool
 
@@ -232,6 +240,7 @@ _ISO_1_0_RULES = RevisionRules(
     max_binary_count=2**16 - 1,
     requires_tagged_trailer=False,
     sentinel=MinimumSentinel(),
+    data_types=(DataType.INT16, DataType.INT32, DataType.BINARY64),
     ascii=AsciiRules(comments=False, symbolic_header_values=False, invalid_token=True),
     reverses_profile_order=False,
 )
@@ -242,12 +251,14 @@ _RULES = {
         requires_utc=True,
         max_binary_count=2**32 - 1,
         requires_tagged_trailer=True,
+        data_types=tuple(DataType)[3:],
     ),
     Revision.BCR_1_0: replace(
         _ISO_1_0_RULES,
         sentinel=MaximumSentinel(),
         ascii=AsciiRules(comments=True, symbolic_header_values=True, invalid_token=False),
         reverses_profile_order=True,
+        data_types=tuple(DataType),
     ),
 }
 

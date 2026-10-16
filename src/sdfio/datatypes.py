@@ -7,13 +7,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import IntEnum
 from typing import Final
 
 import numpy as np
 
 from .exceptions import SdfFormatError
-from .revision import Revision
+from .revision import DataType, Revision
 
 __all__ = [
     "DATA_TYPES",
@@ -28,40 +27,20 @@ __all__ = [
 ]
 
 
-class DataType(IntEnum):
-    """SDF data area storage types, by their ``DataType`` header field code.
-
-    Codes 0-2 are unsigned integer types from the pre-standard BCR-1.0
-    proposal; ISO dropped them (see :mod:`.datatypes`'s ``DATA_TYPES`` for
-    which revisions accept which code).
-    """
-
-    UINT8 = 0
-    UINT16 = 1
-    UINT32 = 2
-    BINARY32 = 3
-    INT8 = 4
-    INT16 = 5
-    INT32 = 6
-    BINARY64 = 7
-
-
 @dataclass(frozen=True)
 class DataTypeInfo:
     """One storage type of the data area.
 
     :param type: The ``DataType`` code of the header.
     :param dtype: The little-endian NumPy dtype of the raw values.
-    :param revisions: The revisions that have this type, see :meth:`is_supported`.
     """
 
     type: DataType
     dtype: np.dtype
-    revisions: frozenset[Revision]
 
     def is_supported(self, revision: Revision) -> bool:
         """Return whether ``revision`` has this data type."""
-        return revision in self.revisions
+        return self.type in revision.rules.data_types
 
     def invalid_value(self, revision: Revision) -> float:
         """Return the raw value that marks a point that was not measured, in ``revision``."""
@@ -78,32 +57,14 @@ class DataTypeInfo:
 
 #: All supported SDF data types, keyed by their ``DataType`` code.
 DATA_TYPES: Final[dict[DataType, DataTypeInfo]] = {
-    DataType.UINT8: DataTypeInfo(DataType.UINT8, np.dtype("<u1"), frozenset({Revision.BCR_1_0})),
-    DataType.UINT16: DataTypeInfo(DataType.UINT16, np.dtype("<u2"), frozenset({Revision.BCR_1_0})),
-    DataType.UINT32: DataTypeInfo(DataType.UINT32, np.dtype("<u4"), frozenset({Revision.BCR_1_0})),
-    DataType.BINARY32: DataTypeInfo(
-        DataType.BINARY32,
-        np.dtype("<f4"),
-        frozenset({Revision.ISO_2_0, Revision.BCR_1_0}),
-    ),
-    DataType.INT8: DataTypeInfo(
-        DataType.INT8, np.dtype("<i1"), frozenset({Revision.ISO_2_0, Revision.BCR_1_0})
-    ),
-    DataType.INT16: DataTypeInfo(
-        DataType.INT16,
-        np.dtype("<i2"),
-        frozenset({Revision.ISO_1_0, Revision.ISO_2_0, Revision.BCR_1_0}),
-    ),
-    DataType.INT32: DataTypeInfo(
-        DataType.INT32,
-        np.dtype("<i4"),
-        frozenset({Revision.ISO_1_0, Revision.ISO_2_0, Revision.BCR_1_0}),
-    ),
-    DataType.BINARY64: DataTypeInfo(
-        DataType.BINARY64,
-        np.dtype("<f8"),
-        frozenset({Revision.ISO_1_0, Revision.ISO_2_0, Revision.BCR_1_0}),
-    ),
+    DataType.UINT8: DataTypeInfo(DataType.UINT8, np.dtype("<u1")),
+    DataType.UINT16: DataTypeInfo(DataType.UINT16, np.dtype("<u2")),
+    DataType.UINT32: DataTypeInfo(DataType.UINT32, np.dtype("<u4")),
+    DataType.BINARY32: DataTypeInfo(DataType.BINARY32, np.dtype("<f4")),
+    DataType.INT8: DataTypeInfo(DataType.INT8, np.dtype("<i1")),
+    DataType.INT16: DataTypeInfo(DataType.INT16, np.dtype("<i2")),
+    DataType.INT32: DataTypeInfo(DataType.INT32, np.dtype("<i4")),
+    DataType.BINARY64: DataTypeInfo(DataType.BINARY64, np.dtype("<f8")),
 }
 
 

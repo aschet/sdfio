@@ -262,6 +262,6 @@ def test_validate_data_range_rejects_bcr_float_value_at_nominal_maximum() -> Non
 
 
 def test_a_revision_lists_the_data_types_it_has() -> None:
-    assert Revision.ISO_1_0.data_types == (DataType.INT16, DataType.INT32, DataType.BINARY64)
-    assert Revision.BCR_1_0.data_types == tuple(DataType)
-    assert DataType.INT8 in Revision.ISO_2_0.data_types
+    assert Revision.ISO_1_0.rules.data_types == (DataType.INT16, DataType.INT32, DataType.BINARY64)
+    assert Revision.BCR_1_0.rules.data_types == tuple(DataType)
+    assert DataType.INT8 in Revision.ISO_2_0.rules.data_types
