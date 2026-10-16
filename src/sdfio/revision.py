@@ -42,12 +42,10 @@ class FileFormat(Enum):
 
 
 class Revision(StrEnum):
-    """Revision of the SDF format, as embedded verbatim in the file magic (e.g. ``aISO-2.0``).
+    """A revision of the SDF format, as written in the magic of a file, such as ``aISO-2.0``.
 
-    ``BCR`` is the pre-standardization proposal this format is based on;
-    ``ISO`` is its standardized successor. BCR never had more than one
-    version. Members are named ``<FAMILY>_<VERSION>``; their string value
-    is the exact ``<FAMILY>-<VERSION>`` text written into the file magic.
+    ``BCR`` is the proposal from before the standard, which ISO succeeded; it has one version.
+    The value of a member is the text of the magic.
     """
 
     ISO_1_0 = "ISO-1.0"
@@ -56,17 +54,10 @@ class Revision(StrEnum):
 
     @classmethod
     def resolve(cls, family_text: str, version_text: str, magic: str) -> Revision:
-        """Look up the revision for a magic's separately-parsed family and version text.
+        """Return the revision of the family and version text of a magic.
 
-        A small shared helper for the ASCII/binary readers, which each parse
-        the magic's structure differently but need the same lookup and error
-        message once they have the two pieces.
-
-        :param family_text: The magic's 3-letter family abbreviation (e.g. ``"ISO"``).
-        :param version_text: The magic's version text (e.g. ``"2.0"``).
-        :param magic: The full original magic text, used only for the error message.
-        :raises SdfFormatError: If ``family_text``/``version_text`` don't form
-            a known, valid revision combination.
+        :param magic: The whole magic, for the error message.
+        :raises SdfFormatError: If the two do not name a revision.
         """
         try:
             return cls(f"{family_text}-{version_text}")

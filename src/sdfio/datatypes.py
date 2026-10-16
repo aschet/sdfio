@@ -48,12 +48,11 @@ class DataType(IntEnum):
 
 @dataclass(frozen=True)
 class DataTypeInfo:
-    """Description of one SDF data area storage type.
+    """One storage type of the data area.
 
-    :param type: ``DataType`` header field value.
-    :param dtype: Little-endian NumPy dtype used to store the raw values.
-    :param revisions: SDF revisions for which this data type is valid, see
-        :meth:`is_supported`.
+    :param type: The ``DataType`` code of the header.
+    :param dtype: The little-endian NumPy dtype of the raw values.
+    :param revisions: The revisions that have this type, see :meth:`is_supported`.
     """
 
     type: DataType
@@ -61,36 +60,19 @@ class DataTypeInfo:
     revisions: frozenset[Revision]
 
     def is_supported(self, revision: Revision) -> bool:
-        """Return whether this data type is valid for the given SDF revision."""
+        """Return whether ``revision`` has this data type."""
         return revision in self.revisions
 
     def invalid_value(self, revision: Revision) -> float:
-        """Sentinel raw value marking a non-measured/spurious point, for ``revision``.
-
-        ISO reserves each type's minimum representable value; BCR (the
-        pre-standard proposal this format descends from) used the maximum
-        instead, since it still had unsigned integer types whose minimum
-        (0) is a valid low bound rather than an obviously-invalid one.
-        """
+        """Return the raw value that marks a point that was not measured, in ``revision``."""
         return revision.rules.sentinel.invalid_value(self.dtype)
 
     def ascii_invalid_value(self, revision: Revision) -> float:
-        """Return the number an ASCII file without a ``BAD`` token writes for a bad point.
-
-        :meth:`invalid_value`, except for a floating point type in BCR, where
-        the nominal maximum is written: it lies within the type's range and
-        reads back as bad, unlike the largest representable value, which has
-        no exact decimal form that stays in range.
-        """
+        """Return the number that an ASCII file without ``BAD`` writes for such a point."""
         return revision.rules.sentinel.ascii_invalid_value(self.dtype)
 
     def is_invalid(self, raw: np.ndarray, revision: Revision) -> np.ndarray:
-        """Mask of the raw values that mark a non-measured/spurious point, for ``revision``.
-
-        Exactly :meth:`invalid_value`, except for a floating point type in BCR,
-        where any value at or above the type's nominal maximum (3.4E+38 for
-        ``binary32``, 1.7E+308 for ``binary64``) is bad, including ``inf``.
-        """
+        """Return the mask of the raw values that mark a point that was not measured."""
         return revision.rules.sentinel.is_invalid(raw, self.dtype)
 
 
@@ -176,9 +158,7 @@ def validate_data_range(
     if valid.size == 0:
         return
     if np.issubdtype(data_type.dtype, np.integer):
-        # Round before range-checking: a value like 32767.4 (int16, max
-        # 32767) is in range once rounded and must not be rejected for
-        # exceeding the limit before rounding is even applied.
+        # A value like 32767.4 is in range for int16 once rounded.
         valid = np.rint(valid)
         info = np.iinfo(data_type.dtype)
         if valid.min() < info.min or valid.max() > info.max:
@@ -216,10 +196,8 @@ def encode_raw(
     :raises SdfFormatError: See :func:`validate_data_range`.
     """
     invalid_mask = np.isnan(data)
-    # 0.0 is just a safe placeholder for invalid points -- it's never used
-    # (overwritten by the sentinel below); it only exists so NaN doesn't
-    # reach np.rint()/astype(), whose behaviour on NaN is undefined for
-    # integer dtypes.
+    # NaN must not reach rint() or astype(), which are undefined for it with integer types; the
+    # placeholder is overwritten with the marker below.
     scaled = np.where(invalid_mask, 0.0, data / z_scale)
     validate_data_range(scaled, invalid_mask, data_type, revision)
     if np.issubdtype(data_type.dtype, np.integer):
@@ -242,11 +220,8 @@ def decode_raw(
     :param data_type: SDF data area storage type of ``raw``.
     :param z_scale: Scale factor; ``data = raw * z_scale``.
     :param revision: SDF revision, see :meth:`DataTypeInfo.invalid_value`.
-    :returns: ``float64`` array in metres, with the sentinel
-        replaced by ``NaN``. A writer that used ``NaN`` itself instead of the sentinel for
-        ``binary32``/``binary64`` data (not standard-compliant, but seen from some real-world
-        exporters) also decodes correctly here: IEEE 754 guarantees ``NaN`` propagates through
-        the ``* z_scale`` multiply below unconditionally, independently of the sentinel check.
+    :returns: ``float64`` array in metres, with ``NaN`` for the marker. A writer that wrote ``NaN``
+        itself into ``binary32``/``binary64`` data, which some do, is read the same way.
     """
     invalid_mask = data_type.is_invalid(raw, revision)
     # NaN before scaling: a huge marker value could overflow when scaled.

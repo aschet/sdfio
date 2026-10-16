@@ -68,18 +68,13 @@ def _read_header_bytes(fp: IO[bytes], size: int) -> bytes:
 
 
 def load(fp: IO[bytes]) -> tuple[Header, np.ndarray, bytes]:
-    """Parse a binary SDF file object opened in binary mode.
+    """Parse a binary SDF file.
 
-    :param fp: File object to read from, positioned at the start of the file.
-    :returns: A ``(header, data, trailer)`` tuple. ``data`` is a
-        ``(num_profiles, num_points)`` array of height values in metres,
-        with ``NaN`` marking non-measured or spurious points.
-    :raises SdfFormatError: If the file is malformed, e.g. a bad magic,
-        unsupported revision or data type, or it ends within the header or the data area. The
-        trailer is not validated on read; it is returned as-is even if not 7-bit
-        ASCII. ``ManufacID`` is truncated at the first NUL byte: BCR-1.0 lets
-        a string shorter than its field be NUL-terminated, and some ISO
-        writers do the same instead of space-padding it as ISO requires.
+    :param fp: A binary stream at the start of the file.
+    :returns: The header, the data and the trailer, which is not validated on read and may not
+        be 7-bit ASCII.
+    :raises SdfFormatError: If the file is malformed, such as a bad magic, an unsupported
+        revision or data type, or an end within the header or the data area.
     """
     magic = _read_header_bytes(fp, MAGIC_SIZE)
     magic_text = magic.decode("ascii", errors="replace")
@@ -114,15 +109,10 @@ def load(fp: IO[bytes]) -> tuple[Header, np.ndarray, bytes]:
 
     data_type = require_supported_data_type(data_type_code, revision)
 
-    # errors="replace" here is a deliberate read-side leniency (unlike the
-    # trailer, ManufacID/dates are not re-validated as ASCII on read) so a
-    # file that's merely non-compliant here can still be opened and
-    # inspected; only *writing* one is rejected (validate_manufacturer_id_ascii).
-    # ManufacID is truncated at the first NUL byte before decoding: BCR-1.0
-    # lets a string shorter than its field be NUL-terminated (what follows is
-    # undefined), while ISO requires space-padding. Some ISO writers follow the
-    # BCR rule; truncating handles both and keeps the undefined bytes out of
-    # the decoded value.
+    # Leniency on read: ManufacID and the dates are not checked for ASCII, so that a file with
+    # such a field can be opened and inspected; writing one is rejected. ManufacID ends at the
+    # first NUL: BCR allows a short string to be NUL-terminated, ISO requires space padding, and
+    # some ISO writers use NUL. Cutting at it handles both and drops the undefined bytes.
     header = Header._read(
         revision=revision,
         format=FileFormat.BINARY,
@@ -150,10 +140,7 @@ def load(fp: IO[bytes]) -> tuple[Header, np.ndarray, bytes]:
     data = decode_raw(raw, data_type, header.z_scale, revision).reshape(num_profiles, num_points)
     data = revision.rules.order_rows(data)
 
-    # Not validated on read, unlike on write: the trailer is secondary to
-    # the header/data area, and a non-compliant trailer in an otherwise
-    # valid file shouldn't prevent reading the (already successfully
-    # decoded) depth data.
+    # Not validated on read: a bad trailer must not prevent reading the heights.
     trailer = rest[byte_count:]
     return header, data, trailer
 

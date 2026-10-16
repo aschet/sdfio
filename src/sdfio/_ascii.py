@@ -72,16 +72,10 @@ def _strip_comment(line: str) -> str:
 
 
 def _split_records(remainder: str, revision: Revision) -> list[str]:
-    # Splitting by matching the "*" delimiter together with its surrounding
-    # newlines (as one combined pattern) can't tell two delimiters directly
-    # adjacent to each other (an explicit empty record, e.g. an empty
-    # trailer written as "*<CRLF>*<CRLF>") apart from a single delimiter --
-    # the newline between them would need to be consumed by both matches at
-    # once. Splitting into lines first and testing each one for being a bare
-    # "*" avoids that ambiguity.
-    # With comments enabled, a "*" followed by a comment still terminates its
-    # record, and the comment is dropped from the header and data records. The
-    # trailer (third record) is free text, so it is kept verbatim.
+    # Lines are split first and each is tested for being a bare "*", because splitting on the
+    # delimiter with its newlines cannot tell an empty record ("*<CRLF>*<CRLF>") from one
+    # delimiter. With comments, a "*" followed by a comment still ends its record, and the
+    # comment is dropped from the first two records; the trailer is free text and kept as it is.
     comments = revision.rules.ascii.comments
     records = []
     current: list[str] = []
@@ -138,17 +132,11 @@ def _parse_float(fields: Mapping[str, str], name: str) -> float:
 
 
 def loads(text: str) -> tuple[Header, np.ndarray, str]:
-    """Parse an in-memory ASCII SDF document.
+    """Parse the text of an ASCII SDF file.
 
-    :param text: Full contents of an ASCII-encoded ``.sdf`` file.
-    :returns: A ``(header, data, trailer)`` tuple. ``data`` is a
-        ``(num_profiles, num_points)`` array of height values in metres,
-        with ``NaN`` marking non-measured or spurious points.
-    :raises SdfFormatError: If the file is malformed, e.g. a bad magic,
-        unsupported revision or data type, or missing records. The trailer is
-        not validated on read; it is returned as-is even if not 7-bit ASCII
-        (any non-ASCII byte was already replaced during decoding, per
-        ``errors="replace"`` in :meth:`SdfFile.loads`).
+    :returns: The header, the data and the trailer, which is not validated on read.
+    :raises SdfFormatError: If the file is malformed, such as a bad magic, an unsupported
+        revision or data type, or a missing record.
     """
     text = text.lstrip("\ufeff")
     first_newline = _LINE_SPLIT_RE.search(text)
@@ -199,10 +187,7 @@ def loads(text: str) -> tuple[Header, np.ndarray, str]:
 
     shape = (_parse_int(fields, "NumProfiles"), _parse_int(fields, "NumPoints"))
     data = _parse_data(data_text, header, shape, data_type)
-    # Not validated on read, unlike on write: the trailer is secondary to
-    # the header/data area, and a non-compliant trailer in an otherwise
-    # valid file shouldn't prevent reading the (already successfully
-    # parsed) depth data.
+    # Not validated on read: a bad trailer must not prevent reading the heights.
     trailer = trailer_text.strip()
     return header, data, trailer
 
