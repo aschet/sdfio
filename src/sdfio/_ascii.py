@@ -82,7 +82,7 @@ def _split_records(remainder: str, revision: Revision) -> list[str]:
     # With comments enabled, a "*" followed by a comment still terminates its
     # record, and the comment is dropped from the header and data records. The
     # trailer (third record) is free text, so it is kept verbatim.
-    comments = revision.rules.allows_ascii_comments
+    comments = revision.rules.ascii.comments
     records = []
     current: list[str] = []
     for line in _LINE_SPLIT_RE.split(remainder):
@@ -120,7 +120,7 @@ def _parse_coded(
     try:
         return int(value)
     except ValueError:
-        if revision.rules.allows_symbolic_header_values and value.upper() in symbols:
+        if revision.rules.ascii.symbolic_header_values and value.upper() in symbols:
             return int(symbols[value.upper()])
         raise SdfFormatError(
             f"Invalid integer value for SDF header field {name!r}: {value!r}"
@@ -165,7 +165,7 @@ def loads(text: str) -> tuple[Header, np.ndarray, str]:
     family_text = magic_match.group("family")
     version_text = magic_match.group("version")
     revision = Revision.resolve(family_text, version_text, magic_line)
-    if _COMMENT_MARKER in magic_line and not revision.rules.allows_ascii_comments:
+    if _COMMENT_MARKER in magic_line and not revision.rules.ascii.comments:
         raise SdfFormatError(f"Not an ASCII SDF file, unexpected magic: {magic_line!r}")
 
     records = _split_records(remainder, revision)
@@ -233,7 +233,7 @@ def _parse_data(
                 raise SdfFormatError(f"Invalid data value at position {index}: {token!r}") from None
 
     invalid_mask = np.isnan(values)
-    if not header.revision.rules.has_ascii_invalid_token:
+    if not header.revision.rules.ascii.invalid_token:
         # BCR marks a bad point with the type's maximum value, as a number.
         invalid_mask |= data_type.is_invalid(values, header.revision)
     # NaN before scaling: a huge marker value could overflow when scaled.
@@ -253,7 +253,7 @@ def load(fp: IO[str]) -> tuple[Header, np.ndarray, str]:
 
 def _format_value(value: float, data_type: DataTypeInfo, revision: Revision) -> str:
     if np.isnan(value):
-        if revision.rules.has_ascii_invalid_token:
+        if revision.rules.ascii.invalid_token:
             return _INVALID_MARKER
         value = data_type.ascii_invalid_value(revision)
     if data_type.type == DataType.BINARY32:

@@ -298,3 +298,11 @@ def test_every_field_of_a_template_is_a_field_of_the_header() -> None:
     template = {field.name: field.default for field in dataclasses.fields(Metadata)}
     header = {field.name for field in dataclasses.fields(Header)}
     assert set(template) <= header
+
+
+def test_the_sentinel_of_a_revision_is_the_minimum_for_iso_and_the_maximum_for_bcr() -> None:
+    dtype = np.dtype("<i2")
+    assert Revision.ISO_2_0.rules.sentinel.invalid_value(dtype) == -32768
+    assert Revision.ISO_2_0.rules.sentinel.usable_range(dtype) == (-32767, 32767)
+    assert Revision.BCR_1_0.rules.sentinel.invalid_value(dtype) == 32767
+    assert Revision.BCR_1_0.rules.sentinel.usable_range(dtype) == (-32768, 32766)

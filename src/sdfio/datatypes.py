@@ -46,11 +46,6 @@ class DataType(IntEnum):
     BINARY64 = 7
 
 
-# BCR-1.0 marks a bad floating point value with any value at or above the nominal
-# maximum of its type, which is slightly below the largest representable value.
-_BCR_FLOAT_BAD_THRESHOLD: Final[dict[int, float]] = {4: 3.4e38, 8: 1.7e308}
-
-
 @dataclass(frozen=True)
 class DataTypeInfo:
     """Description of one SDF data area storage type.
@@ -77,10 +72,7 @@ class DataTypeInfo:
         instead, since it still had unsigned integer types whose minimum
         (0) is a valid low bound rather than an obviously-invalid one.
         """
-        bounds = (
-            np.iinfo(self.dtype) if np.issubdtype(self.dtype, np.integer) else np.finfo(self.dtype)
-        )
-        return float(bounds.max if revision.rules.uses_max_sentinel else bounds.min)
+        return revision.rules.sentinel.invalid_value(self.dtype)
 
     def ascii_invalid_value(self, revision: Revision) -> float:
         """Return the number an ASCII file without a ``BAD`` token writes for a bad point.
@@ -90,9 +82,7 @@ class DataTypeInfo:
         reads back as bad, unlike the largest representable value, which has
         no exact decimal form that stays in range.
         """
-        if revision.rules.uses_max_sentinel and self.dtype.kind == "f":
-            return _BCR_FLOAT_BAD_THRESHOLD[self.dtype.itemsize]
-        return self.invalid_value(revision)
+        return revision.rules.sentinel.ascii_invalid_value(self.dtype)
 
     def is_invalid(self, raw: np.ndarray, revision: Revision) -> np.ndarray:
         """Mask of the raw values that mark a non-measured/spurious point, for ``revision``.
@@ -101,9 +91,7 @@ class DataTypeInfo:
         where any value at or above the type's nominal maximum (3.4E+38 for
         ``binary32``, 1.7E+308 for ``binary64``) is bad, including ``inf``.
         """
-        if revision.rules.uses_max_sentinel and self.dtype.kind == "f":
-            return np.asarray(raw >= self.dtype.type(_BCR_FLOAT_BAD_THRESHOLD[self.dtype.itemsize]))
-        return np.asarray(raw == self.invalid_value(revision))
+        return revision.rules.sentinel.is_invalid(raw, self.dtype)
 
 
 #: All supported SDF data types, keyed by their ``DataType`` code.
@@ -293,12 +281,7 @@ def suggest_z_scale(
     if finite.size == 0 or not np.issubdtype(data_type.dtype, np.integer):
         return 1.0
 
-    info = np.iinfo(data_type.dtype)
-    # Whichever bound `revision` reserves as the invalid-point sentinel is
-    # nudged one step towards zero, since that exact value isn't usable for
-    # real data.
-    usable_max = info.max - 1 if revision.rules.uses_max_sentinel else info.max
-    usable_min = info.min if revision.rules.uses_max_sentinel else info.min + 1
+    usable_min, usable_max = revision.rules.sentinel.usable_range(data_type.dtype)
     high, low = float(finite.max()), float(finite.min())
     candidates = [high / usable_max] if high > 0 else []
     # usable_min is 0 for an unsigned dtype, which can't represent a negative value at any
