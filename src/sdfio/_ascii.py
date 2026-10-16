@@ -11,6 +11,7 @@ from collections.abc import Mapping
 from typing import IO
 
 import numpy as np
+from numpy.typing import NDArray
 
 from ._dates import format_sdf_datetime, parse_sdf_datetime
 from ._numeric import format_scientific
@@ -126,7 +127,7 @@ def _parse_float(fields: Mapping[str, str], name: str) -> float:
         ) from None
 
 
-def loads(text: str) -> tuple[Header, np.ndarray, str]:
+def loads(text: str) -> tuple[Header, NDArray[np.float64], str]:
     """Parse the text of an ASCII SDF file.
 
     :returns: The header, the data and the trailer, which is not validated on read.
@@ -189,7 +190,7 @@ def loads(text: str) -> tuple[Header, np.ndarray, str]:
 
 def _parse_data(
     data_text: str, header: Header, shape: tuple[int, int], data_type: DataTypeInfo
-) -> np.ndarray:
+) -> NDArray[np.float64]:
     tokens = data_text.split()
     expected = shape[0] * shape[1]
     if len(tokens) != expected:
@@ -223,7 +224,7 @@ def _parse_data(
     return header.revision.rules.order_rows(data)
 
 
-def load(fp: IO[str]) -> tuple[Header, np.ndarray, str]:
+def load(fp: IO[str]) -> tuple[Header, NDArray[np.float64], str]:
     """Parse an ASCII SDF file object opened in text mode.
 
     Equivalent to :func:`loads`, reading the text from ``fp`` first.
@@ -243,7 +244,7 @@ def _format_value(value: float, data_type: DataTypeInfo, revision: Revision) -> 
     return str(round(value))
 
 
-def dumps(header: Header, data: np.ndarray, trailer: str = "") -> str:
+def dumps(header: Header, data: NDArray[np.float64], trailer: str = "") -> str:
     """Serialize a header/data pair to the ASCII SDF text representation.
 
     :param header: Header describing ``data``; ``header.format`` is ignored.
@@ -300,7 +301,7 @@ def dumps(header: Header, data: np.ndarray, trailer: str = "") -> str:
     return "\r\n".join(lines) + "\r\n"
 
 
-def dump(header: Header, data: np.ndarray, fp: IO[str], trailer: str = "") -> None:
+def dump(header: Header, data: NDArray[np.float64], fp: IO[str], trailer: str = "") -> None:
     """Serialize a header/data pair as ASCII SDF text to a file object.
 
     Equivalent to :func:`dumps`, writing the result to ``fp``.

@@ -9,9 +9,10 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, replace
 from enum import Enum, IntEnum, StrEnum, auto
-from typing import Final
+from typing import Any, Final
 
 import numpy as np
+from numpy.typing import NDArray
 
 from .exceptions import SdfFormatError
 
@@ -106,7 +107,7 @@ class Sentinel(ABC):
         """Return the number an ASCII file without a ``BAD`` token writes for a bad point."""
         return self.invalid_value(dtype)
 
-    def is_invalid(self, raw: np.ndarray, dtype: np.dtype) -> np.ndarray:
+    def is_invalid(self, raw: NDArray[Any], dtype: np.dtype) -> NDArray[np.bool_]:
         """Return the mask of the raw values that mark a point that was not measured."""
         return np.asarray(raw == self.invalid_value(dtype))
 
@@ -155,7 +156,7 @@ class MaximumSentinel(Sentinel):
             return _BCR_FLOAT_BAD_THRESHOLD[dtype.itemsize]
         return self.invalid_value(dtype)
 
-    def is_invalid(self, raw: np.ndarray, dtype: np.dtype) -> np.ndarray:
+    def is_invalid(self, raw: NDArray[Any], dtype: np.dtype) -> NDArray[np.bool_]:
         """Return the mask of raw values at or above the nominal maximum of a float type.
 
         That includes ``inf``: 3.4E+38 for ``binary32`` and 1.7E+308 for ``binary64``.
@@ -226,7 +227,7 @@ class RevisionRules:
     ascii: AsciiRules
     reverses_profile_order: bool
 
-    def order_rows(self, data: np.ndarray) -> np.ndarray:
+    def order_rows(self, data: NDArray[np.float64]) -> NDArray[np.float64]:
         """Return ``data`` with the rows in the order of the file, or back in increasing y.
 
         The same operation converts in both directions: a reversal for a revision for which

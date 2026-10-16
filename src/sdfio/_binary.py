@@ -11,6 +11,7 @@ import struct
 from typing import IO
 
 import numpy as np
+from numpy.typing import NDArray
 
 from ._dates import format_sdf_datetime, parse_sdf_datetime
 from ._validation import validate_check_type, validate_compression, validate_for_write
@@ -62,7 +63,7 @@ def _read_header_bytes(fp: IO[bytes], size: int) -> bytes:
     return data
 
 
-def load(fp: IO[bytes]) -> tuple[Header, np.ndarray, bytes]:
+def load(fp: IO[bytes]) -> tuple[Header, NDArray[np.float64], bytes]:
     """Parse a binary SDF file.
 
     :param fp: A binary stream at the start of the file.
@@ -140,7 +141,7 @@ def load(fp: IO[bytes]) -> tuple[Header, np.ndarray, bytes]:
     return header, data, trailer
 
 
-def dump(header: Header, data: np.ndarray, fp: IO[bytes], trailer: bytes = b"") -> None:
+def dump(header: Header, data: NDArray[np.float64], fp: IO[bytes], trailer: bytes = b"") -> None:
     """Serialize a header/data pair to the binary SDF representation.
 
     :param header: Header describing ``data``; ``header.format`` is ignored.
@@ -183,7 +184,7 @@ def dump(header: Header, data: np.ndarray, fp: IO[bytes], trailer: bytes = b"") 
         fp.write(trailer)
 
 
-def loads(data: bytes) -> tuple[Header, np.ndarray, bytes]:
+def loads(data: bytes) -> tuple[Header, NDArray[np.float64], bytes]:
     """Parse an in-memory binary SDF blob.
 
     Equivalent to :func:`load`, reading from an in-memory ``data`` buffer.
@@ -195,7 +196,7 @@ def loads(data: bytes) -> tuple[Header, np.ndarray, bytes]:
     return load(io.BytesIO(data))
 
 
-def dumps(header: Header, data: np.ndarray, trailer: bytes = b"") -> bytes:
+def dumps(header: Header, data: NDArray[np.float64], trailer: bytes = b"") -> bytes:
     """Serialize a header/data pair to an in-memory binary SDF blob.
 
     :param header: Header describing ``data``; ``header.format`` is ignored.

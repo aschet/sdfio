@@ -10,9 +10,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass, fields, replace
 from datetime import UTC, datetime
 from types import MappingProxyType
-from typing import Literal
+from typing import Any, Literal
 
 import numpy as np
+from numpy.typing import ArrayLike, NDArray
 
 from . import _io
 from .datatypes import (
@@ -51,13 +52,13 @@ class SdfFile:
     """
 
     header: Header
-    data: np.ndarray
+    data: NDArray[np.float64]
     trailer: str | bytes = ""
 
     def __setattr__(self, name: str, value: object) -> None:
         """Hold ``data`` as a 2-D ``float64`` array, whenever it is set."""
         if name == "data":
-            value = _as_grid(value)
+            value = _as_grid(value)  # type: ignore[arg-type]
         super().__setattr__(name, value)
 
     def __repr__(self) -> str:
@@ -87,25 +88,25 @@ class SdfFile:
         )
 
     @property
-    def x_axis(self) -> np.ndarray:
+    def x_axis(self) -> NDArray[np.float64]:
         """Return the x coordinates of the columns in metres: ``x_j = (j - 1) * x_scale``.
 
         There is one per point of a row. One sentence of the 2026 edition of the standard pairs
         the numbers the other way round, against its formula and figure; a later edition fixes it.
         """
-        return np.arange(self.data.shape[1]) * self.header.x_scale
+        return np.arange(self.data.shape[1], dtype=np.float64) * self.header.x_scale
 
     @property
-    def y_axis(self) -> np.ndarray:
+    def y_axis(self) -> NDArray[np.float64]:
         """Return the y coordinates of the rows in metres: ``y_i = (i - 1) * y_scale``.
 
         ``y`` increases with the row, in the right-handed coordinate system of the standard, for
         every revision, see :attr:`RevisionRules.reverses_profile_order`. For a profile the
         standard calls ``y_scale`` meaningless, and the result is ``[0.0]``.
         """
-        return np.arange(self.data.shape[0]) * self.header.y_scale
+        return np.arange(self.data.shape[0], dtype=np.float64) * self.header.y_scale
 
-    def points(self, *, drop_invalid: bool = False) -> np.ndarray:
+    def points(self, *, drop_invalid: bool = False) -> NDArray[np.float64]:
         """Return the points of the grid as an ``(num_profiles, num_points, 3)`` array in metres.
 
         The last axis holds ``x``, ``y`` and ``z``: ``x`` from :attr:`x_axis` along the columns,
@@ -236,7 +237,7 @@ class SdfFile:
 
     def with_data(
         self,
-        data: np.ndarray,
+        data: ArrayLike,
         *,
         x_scale: float | None = None,
         y_scale: float | None = None,
@@ -268,7 +269,7 @@ class SdfFile:
         )
         return SdfFile(header=header, data=array, trailer=self.trailer)
 
-    def raw_data(self) -> np.ndarray:
+    def raw_data(self) -> NDArray[Any]:
         """Return the coded heights in the on-disk dtype of the data type.
 
         That is ``data / z_scale``, rounded, with the marker of the revision instead of ``NaN``
@@ -308,7 +309,7 @@ class SdfFile:
     @classmethod
     def from_array(
         cls,
-        data: np.ndarray,
+        data: ArrayLike,
         *,
         x_scale: float,
         y_scale: float,
@@ -397,7 +398,7 @@ class SdfFile:
         _io.write_bytes(path, self.dumps(format=format))
 
 
-def _as_grid(data: object) -> np.ndarray:
+def _as_grid(data: ArrayLike) -> NDArray[np.float64]:
     array = np.asarray(data, dtype=np.float64)
     if array.ndim != 2:
         raise SdfFormatError("SDF data must be a 2-D (num_profiles, num_points) array")
@@ -419,7 +420,7 @@ def read(path: PathOrStream) -> SdfFile:
 
 def write(
     path: PathOrStream,
-    data: np.ndarray,
+    data: ArrayLike,
     *,
     x_scale: float,
     y_scale: float,

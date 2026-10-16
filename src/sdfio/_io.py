@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import IO
 
 import numpy as np
+from numpy.typing import NDArray
 
 from . import _ascii, _binary
 from .exceptions import SdfFormatError
@@ -32,7 +33,7 @@ PathLike = str | os.PathLike[str]
 PathOrStream = PathLike | IO[bytes]
 
 
-def decode(data: bytes) -> tuple[Header, np.ndarray, str | bytes]:
+def decode(data: bytes) -> tuple[Header, NDArray[np.float64], str | bytes]:
     """Parse the contents of a ``.sdf`` file, detecting the encoding from its magic.
 
     A UTF-8 byte order mark in front of the magic, which some tools write, is ignored.
@@ -52,7 +53,7 @@ def decode(data: bytes) -> tuple[Header, np.ndarray, str | bytes]:
     return _ascii.loads(data.decode("ascii", errors="replace"))
 
 
-def encode(header: Header, data: np.ndarray, trailer: str | bytes) -> bytes:
+def encode(header: Header, data: NDArray[np.float64], trailer: str | bytes) -> bytes:
     """Serialize a file in the encoding of ``header.format``.
 
     :raises SdfFormatError: If the file can't be written, see :func:`sdfio.write`.

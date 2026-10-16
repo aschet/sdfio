@@ -7,9 +7,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Final
+from typing import Any, Final
 
 import numpy as np
+from numpy.typing import NDArray
 
 from .exceptions import SdfFormatError
 from .revision import DataType, Revision
@@ -50,7 +51,7 @@ class DataTypeInfo:
         """Return the number that an ASCII file without ``BAD`` writes for such a point."""
         return revision.rules.sentinel.ascii_invalid_value(self.dtype)
 
-    def is_invalid(self, raw: np.ndarray, revision: Revision) -> np.ndarray:
+    def is_invalid(self, raw: NDArray[Any], revision: Revision) -> NDArray[np.bool_]:
         """Return the mask of the raw values that mark a point that was not measured."""
         return revision.rules.sentinel.is_invalid(raw, self.dtype)
 
@@ -97,8 +98,8 @@ def require_supported_data_type(identifier: int, revision: Revision) -> DataType
 
 
 def validate_data_range(
-    raw: np.ndarray,
-    invalid_mask: np.ndarray,
+    raw: NDArray[np.float64],
+    invalid_mask: NDArray[np.bool_],
     data_type: DataTypeInfo,
     revision: Revision = Revision.ISO_2_0,
 ) -> None:
@@ -140,11 +141,11 @@ def validate_data_range(
 
 
 def encode_raw(
-    data: np.ndarray,
+    data: NDArray[np.float64],
     data_type: DataTypeInfo,
     z_scale: float,
     revision: Revision = Revision.ISO_2_0,
-) -> np.ndarray:
+) -> NDArray[Any]:
     """Convert physical height values (metres) to the raw on-disk coded values.
 
     :param data: Height values in metres; ``NaN`` marks non-measured or
@@ -170,11 +171,11 @@ def encode_raw(
 
 
 def decode_raw(
-    raw: np.ndarray,
+    raw: NDArray[Any],
     data_type: DataTypeInfo,
     z_scale: float,
     revision: Revision = Revision.ISO_2_0,
-) -> np.ndarray:
+) -> NDArray[np.float64]:
     """Convert raw on-disk coded values back to physical height values (metres).
 
     :param raw: Array of dtype ``data_type.dtype``.
@@ -195,7 +196,7 @@ def decode_raw(
 
 
 def suggest_z_scale(
-    data: np.ndarray, data_type: DataType, revision: Revision = Revision.ISO_2_0
+    data: NDArray[np.float64], data_type: DataType, revision: Revision = Revision.ISO_2_0
 ) -> float:
     """Suggest the smallest ``z_scale`` that encodes ``data`` without overflow.
 
