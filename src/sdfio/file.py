@@ -60,6 +60,22 @@ class SdfFile:
             value = _as_grid(value)
         super().__setattr__(name, value)
 
+    def __repr__(self) -> str:
+        """Describe the file in one line; the heights are too many for a ``repr`` that evaluates.
+
+        >>> import numpy as np
+        >>> SdfFile.from_array(np.zeros((2, 3)), x_scale=1e-6, y_scale=1e-6)
+        <SdfFile ISO-2.0 binary, 2 profiles x 3 points, binary64>
+        """
+        profiles, points = self.data.shape
+        header = self.header
+        return (
+            f"<SdfFile {header.revision} {header.format.name.lower()}, "
+            f"{profiles} {'profile' if profiles == 1 else 'profiles'} x "
+            f"{points} {'point' if points == 1 else 'points'}, "
+            f"{header.data_type.name.lower()}>"
+        )
+
     def __eq__(self, other: object) -> bool:
         """Compare header, data (NaN-aware) and trailer for equality."""
         if not isinstance(other, SdfFile):

@@ -746,3 +746,16 @@ def test_with_data_rejects_data_that_is_not_two_dimensional() -> None:
     sdf = sdfio.SdfFile.from_array(np.zeros((2, 2)), x_scale=1e-6, y_scale=1e-6)
     with pytest.raises(SdfFormatError, match="2-D"):
         sdf.with_data(np.zeros(3))
+
+
+def test_the_repr_of_a_file_is_one_line_in_angle_brackets() -> None:
+    sdf = sdfio.SdfFile.from_array(
+        np.zeros((480, 640)),
+        x_scale=1e-6,
+        y_scale=1e-6,
+        format=FileFormat.ASCII,
+        metadata=sdfio.Metadata(revision=Revision.BCR_1_0, data_type=DataType.INT16),
+    )
+    assert repr(sdf) == "<SdfFile BCR-1.0 ascii, 480 profiles x 640 points, int16>"
+    profile = sdfio.SdfFile.from_array(np.zeros((1, 1)), x_scale=1e-6, y_scale=1e-6)
+    assert repr(profile) == "<SdfFile ISO-2.0 binary, 1 profile x 1 point, binary64>"
