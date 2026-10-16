@@ -30,7 +30,7 @@ def _make_header(**overrides: Any) -> Header:
         "y_scale": 1e-6,
         "z_scale": 1e-6,
         "z_resolution": -1.0,
-        "data_type": 7,
+        "data_type": DataType.BINARY64,
     }
     defaults.update(overrides)
     return Header(**defaults)
@@ -77,13 +77,13 @@ def test_load_rejects_ascii_magic() -> None:
 
 
 def test_dump_rejects_out_of_range_integer_value() -> None:
-    header = _make_header(data_type=4)  # int8
+    header = _make_header(data_type=DataType.INT8)  # int8
     with pytest.raises(SdfFormatError, match="out of range"):
         _binary.dump(header, np.array([[1000.0]]), io.BytesIO())
 
 
 def test_dump_rejects_sentinel_collision() -> None:
-    header = _make_header(data_type=4, z_scale=1.0)  # int8
+    header = _make_header(data_type=DataType.INT8, z_scale=1.0)  # int8
     with pytest.raises(SdfFormatError, match="invalid-point sentinel"):
         _binary.dump(header, np.array([[-128.0]]), io.BytesIO())
 
@@ -217,13 +217,12 @@ def test_load_returns_non_ascii_trailer_as_is() -> None:
 
 
 def test_dump_rejects_data_type_invalid_for_revision() -> None:
-    header = _make_header(revision=Revision.ISO_1_0, data_type=3)
     with pytest.raises(SdfFormatError, match="not valid for SDF revision"):
-        _binary.dump(header, np.zeros((1, 2)), io.BytesIO())
+        _make_header(revision=Revision.ISO_1_0, data_type=DataType.BINARY32)
 
 
 def test_dump_rejects_num_points_exceeding_revision_width() -> None:
-    header = _make_header(revision=Revision.ISO_1_0, data_type=7)
+    header = _make_header(revision=Revision.ISO_1_0, data_type=DataType.BINARY64)
     with pytest.raises(SdfFormatError, match="NumPoints/NumProfiles must be between"):
         _binary.dump(header, np.zeros((1, 70000)), io.BytesIO())
 
@@ -242,7 +241,7 @@ def test_dumps_loads_roundtrip() -> None:
 
 
 def test_roundtrip_bcr_revision() -> None:
-    header = _make_header(revision=Revision.BCR_1_0, data_type=3)
+    header = _make_header(revision=Revision.BCR_1_0, data_type=DataType.BINARY32)
     data = np.array([[1e-6, -2e-6]])
     buffer = io.BytesIO()
     _binary.dump(header, data, buffer)
@@ -258,8 +257,8 @@ def test_dump_reverses_profile_order_for_bcr_on_disk() -> None:
     # Each row has a distinct value so the on-disk row order is directly
     # observable, independent of the revision-aware unflipping load() does.
     data = np.array([[0.0], [1.0], [2.0], [3.0]])
-    iso_header = _make_header(revision=Revision.ISO_1_0, data_type=7, z_scale=1.0)
-    bcr_header = _make_header(revision=Revision.BCR_1_0, data_type=7, z_scale=1.0)
+    iso_header = _make_header(revision=Revision.ISO_1_0, data_type=DataType.BINARY64, z_scale=1.0)
+    bcr_header = _make_header(revision=Revision.BCR_1_0, data_type=DataType.BINARY64, z_scale=1.0)
 
     iso_blob = _binary.dumps(iso_header, data)
     bcr_blob = _binary.dumps(bcr_header, data)
@@ -320,7 +319,7 @@ def test_load_rejects_bcr_checksum_too() -> None:
 
 def test_loads_accepts_upper_case_binary_prefix() -> None:
     # BCR-1.0 allows "b" or "B" as the first magic character.
-    header = _make_header(revision=Revision.BCR_1_0, data_type=7)
+    header = _make_header(revision=Revision.BCR_1_0, data_type=DataType.BINARY64)
     blob = _binary.dumps(header, np.zeros((1, 1)))
     read_header, _data, _trailer = _binary.loads(b"B" + blob[1:])
     assert read_header.revision == Revision.BCR_1_0

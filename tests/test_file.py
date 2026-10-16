@@ -322,7 +322,7 @@ def test_data_type_roundtrips_and_rejects_unknown_code() -> None:
 
 def test_changing_data_type_incompatible_with_revision_raises() -> None:
     sdf = sdfio.SdfFile(
-        header=sdfio.Header(revision=Revision.ISO_1_0, data_type=5),
+        header=sdfio.Header(revision=Revision.ISO_1_0, data_type=DataType.INT16),
         data=np.array([[1.0]]),
     )
     sdf.data_type = DataType.BINARY32  # ISO-2.0/BCR-1.0 only
@@ -449,7 +449,7 @@ def test_sdffile_loads_dumps_roundtrip(file_format: FileFormat) -> None:
         x_scale=1e-6,
         y_scale=1e-6,
         z_scale=1e-7,
-        data_type=7,
+        data_type=DataType.BINARY64,
     )
     sdf = sdfio.SdfFile(header=header, data=data)
 
@@ -585,25 +585,39 @@ def test_from_array_rejects_data_that_is_not_two_dimensional() -> None:
         sdfio.SdfFile.from_array(np.zeros(3), x_scale=1e-6, y_scale=1e-6)
 
 
-def test_from_array_rejects_an_unknown_data_type_code() -> None:
+def test_a_template_rejects_an_unknown_data_type_code() -> None:
     with pytest.raises(SdfFormatError, match="Unknown SDF data type"):
-        sdfio.SdfFile.from_array(
-            np.zeros((1, 2)),
-            x_scale=1e-6,
-            y_scale=1e-6,
-            metadata=sdfio.Metadata(data_type=99),
-        )
+        sdfio.Metadata(data_type=99)  # type: ignore[arg-type]
 
 
-def test_from_array_leaves_the_checks_of_the_data_to_the_write() -> None:
+def test_a_template_rejects_a_data_type_the_revision_does_not_have() -> None:
+    with pytest.raises(SdfFormatError, match="not valid for SDF revision"):
+        sdfio.Metadata(revision=Revision.ISO_1_0, data_type=DataType.BINARY32)
+
+
+def test_a_header_rejects_an_unknown_data_type_when_it_is_set() -> None:
+    header = sdfio.Header()
+    with pytest.raises(SdfFormatError, match="Unknown SDF data type"):
+        header.data_type = 99  # type: ignore[assignment]
+
+
+def test_the_data_of_a_file_is_a_two_dimensional_float_array_whenever_it_is_set() -> None:
+    sdf = sdfio.SdfFile(header=sdfio.Header(), data=[[1, 2]])  # type: ignore[arg-type]
+    assert sdf.data.dtype == np.float64
+    with pytest.raises(SdfFormatError, match="2-D"):
+        sdf.data = np.zeros(3)
+
+
+def test_from_array_leaves_the_check_that_the_data_fits_to_the_write() -> None:
     sdf = sdfio.SdfFile.from_array(
-        np.zeros((1, 2)),
+        np.array([[1.0, 2.0]]),
         x_scale=1e-6,
         y_scale=1e-6,
-        metadata=sdfio.Metadata(revision=Revision.ISO_1_0, data_type=DataType.BINARY32),
+        z_scale=1e-6,
+        metadata=sdfio.Metadata(data_type=DataType.INT16),
     )
 
-    with pytest.raises(SdfFormatError, match="not valid for SDF revision"):
+    with pytest.raises(SdfFormatError, match="out of range"):
         sdf.dumps()
 
 

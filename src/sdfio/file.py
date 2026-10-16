@@ -46,7 +46,8 @@ class SdfFile:
     :param data: ``(num_profiles, num_points)`` array of height values in
         metres, with ``NaN`` marking non-measured or spurious points. ``y``
         increases with row index, in a right-handed coordinate system --
-        see :attr:`x_axis`/:attr:`y_axis`.
+        see :attr:`x_axis`/:attr:`y_axis`. It is held as a 2-D ``float64`` array, whenever it
+        is set, and the number of points and profiles of the file are its shape.
     :param trailer: Raw record 3 trailer content; text for ASCII files,
         bytes for binary files.
     """
@@ -54,6 +55,12 @@ class SdfFile:
     header: Header
     data: np.ndarray
     trailer: str | bytes = ""
+
+    def __setattr__(self, name: str, value: object) -> None:
+        """Hold ``data`` as a 2-D ``float64`` array, whenever it is set."""
+        if name == "data":
+            value = _as_grid(value)
+        super().__setattr__(name, value)
 
     def __eq__(self, other: object) -> bool:
         """Compare header, data (NaN-aware) and trailer for equality."""
@@ -278,9 +285,7 @@ class SdfFile:
         >>> part.data.shape, part.header.x_scale
         ((2, 3), 2e-06)
         """
-        array = np.asarray(data, dtype=np.float64)
-        if array.ndim != 2:
-            raise SdfFormatError("SDF data must be a 2-D (num_profiles, num_points) array")
+        array = _as_grid(data)
         header = replace(
             self.header,
             x_scale=self.header.x_scale if x_scale is None else x_scale,
@@ -352,9 +357,9 @@ class SdfFile:
         """Build an in-memory SDF file from a NumPy array, without writing it.
 
         The arguments are those of :func:`sdfio.write`, which builds the file this way and
-        saves it. Only the shape of ``data`` and the data type code are checked here. Everything
-        else, such as whether ``data`` fits the data type, whether the data type exists in the
-        revision, the ``z_scale``, the manufacturer ID and the trailer, is checked when the file is
+        saves it. Only the shape of ``data`` is checked here, and ``metadata`` has checked its data
+        type against its revision. Everything else, such as whether ``data`` fits the data type,
+        the ``z_scale``, the manufacturer ID and the trailer, is checked when the file is
         written, see :meth:`save` and :meth:`dumps`.
 
         :param data: ``(num_profiles, num_points)`` array of height values in
@@ -378,17 +383,14 @@ class SdfFile:
             ASCII; values longer than 10 bytes are silently truncated. The dates are held as UTC
             to the minute, see :class:`Header`.
         :param trailer: Optional record 3 trailer content.
-        :raises SdfFormatError: If ``data`` is not 2-D or ``metadata.data_type`` is not a known
-            data type code.
+        :raises SdfFormatError: If ``data`` is not 2-D.
 
         >>> import numpy as np
         >>> sdf = SdfFile.from_array(np.zeros((2, 3)), x_scale=1e-6, y_scale=1e-6)
         >>> sdf.data.shape, sdf.header.revision.value, sdf.header.format.name
         ((2, 3), 'ISO-2.0', 'BINARY')
         """
-        array = np.asarray(data, dtype=np.float64)
-        if array.ndim != 2:
-            raise SdfFormatError("SDF data must be a 2-D (num_profiles, num_points) array")
+        array = _as_grid(data)
         meta = metadata if metadata is not None else Metadata()
         resolved_data_type = get_data_type(meta.data_type)
         resolved_z_scale = (
@@ -475,6 +477,13 @@ class SdfFile:
         :raises SdfFormatError: See :meth:`dumps`.
         """
         _write_bytes(path, self.dumps(format=format))
+
+
+def _as_grid(data: object) -> np.ndarray:
+    array = np.asarray(data, dtype=np.float64)
+    if array.ndim != 2:
+        raise SdfFormatError("SDF data must be a 2-D (num_profiles, num_points) array")
+    return array
 
 
 def _read_bytes(source: PathOrStream) -> bytes:

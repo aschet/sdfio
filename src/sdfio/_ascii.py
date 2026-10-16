@@ -194,7 +194,7 @@ def loads(text: str) -> tuple[Header, np.ndarray, str]:
         y_scale=_parse_float(fields, "Yscale"),
         z_scale=_parse_float(fields, "Zscale"),
         z_resolution=_parse_float(fields, "Zresolution"),
-        data_type=data_type_code,
+        data_type=data_type.type,
     )
 
     shape = (_parse_int(fields, "NumProfiles"), _parse_int(fields, "NumPoints"))

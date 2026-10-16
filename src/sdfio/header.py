@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
-from .datatypes import DataType, DataTypeInfo, require_supported_data_type
+from .datatypes import DataType, DataTypeInfo, get_data_type, require_supported_data_type
 from .exceptions import SdfFormatError, SdfVersionError
 from .revision import ASCII_PREFIX, BINARY_PREFIX, FileFormat, Revision
 from .trailer import validate_trailer_ascii, validate_trailer_tagged
@@ -227,10 +227,10 @@ class Header:
     y_scale: float = 1.0
     z_scale: float = 1.0
     z_resolution: float = -1.0
-    data_type: int = DataType.BINARY64
+    data_type: DataType = DataType.BINARY64
 
     def __post_init__(self) -> None:
-        """Coerce and validate the SDF revision, and validate the file format."""
+        """Coerce and validate the SDF revision, the file format and the data type."""
         try:
             self.revision = Revision(self.revision)
         except ValueError:
@@ -239,9 +239,12 @@ class Header:
             ) from None
         if not isinstance(self.format, FileFormat):
             raise TypeError(f"format must be a FileFormat member, got {self.format!r}")
+        require_supported_data_type(self.data_type, self.revision)
 
     def __setattr__(self, name: str, value: object) -> None:
-        """Hold ``create_date`` and ``mod_date`` as UTC to the minute, whenever they are set."""
+        """Hold the dates as UTC to the minute and the data type as a known one, whenever set."""
+        if name == "data_type":
+            value = get_data_type(value).type  # type: ignore[arg-type]
         if name in ("create_date", "mod_date"):
             value = to_sdf_datetime(value)  # type: ignore[arg-type]
         super().__setattr__(name, value)
@@ -282,9 +285,12 @@ class Metadata:
     create_date: datetime | None = None
     mod_date: datetime | None = None
     z_resolution: float = -1.0
-    data_type: int = DataType.BINARY64
+    data_type: DataType = DataType.BINARY64
 
     def __post_init__(self) -> None:
-        """Hold ``create_date`` and ``mod_date`` as UTC to the minute."""
+        """Hold the dates as UTC to the minute, and check the data type against the revision."""
+        object.__setattr__(
+            self, "data_type", require_supported_data_type(self.data_type, self.revision).type
+        )
         object.__setattr__(self, "create_date", to_sdf_datetime(self.create_date))
         object.__setattr__(self, "mod_date", to_sdf_datetime(self.mod_date))

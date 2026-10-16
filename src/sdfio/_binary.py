@@ -135,7 +135,7 @@ def load(fp: IO[bytes]) -> tuple[Header, np.ndarray, bytes]:
         y_scale=y_scale,
         z_scale=z_scale,
         z_resolution=z_resolution,
-        data_type=data_type_code,
+        data_type=data_type.type,
     )
 
     # The data area and the trailer are read together and split, instead of asking for the size

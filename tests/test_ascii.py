@@ -169,37 +169,37 @@ def test_load_reads_from_file_object() -> None:
 
 
 def test_dumps_rejects_out_of_range_integer_value() -> None:
-    header = Header(z_scale=1.0, data_type=4)  # int8
+    header = Header(z_scale=1.0, data_type=DataType.INT8)  # int8
     with pytest.raises(SdfFormatError, match="out of range"):
         _ascii.dumps(header, np.array([[1000.0]]))
 
 
 def test_dumps_rejects_sentinel_collision() -> None:
-    header = Header(z_scale=1.0, data_type=4)  # int8
+    header = Header(z_scale=1.0, data_type=DataType.INT8)  # int8
     with pytest.raises(SdfFormatError, match="invalid-point sentinel"):
         _ascii.dumps(header, np.array([[-128.0]]))
 
 
 def test_dumps_rejects_malformed_v2_trailer() -> None:
-    header = Header(revision=Revision.ISO_2_0, data_type=7)
+    header = Header(revision=Revision.ISO_2_0, data_type=DataType.BINARY64)
     with pytest.raises(SdfFormatError, match="tagged 'Name = Value' format"):
         _ascii.dumps(header, np.zeros((1, 1)), trailer="not tagged fields")
 
 
 def test_dumps_allows_tagged_v2_trailer() -> None:
-    header = Header(revision=Revision.ISO_2_0, data_type=7)
+    header = Header(revision=Revision.ISO_2_0, data_type=DataType.BINARY64)
     _ascii.dumps(header, np.zeros((1, 1)), trailer="Note = hello")
 
 
 def test_dumps_allows_empty_v2_trailer() -> None:
-    header = Header(revision=Revision.ISO_2_0, data_type=7)
+    header = Header(revision=Revision.ISO_2_0, data_type=DataType.BINARY64)
     _ascii.dumps(header, np.zeros((1, 1)), trailer="")
 
 
 def test_dumps_loads_roundtrips_empty_trailer_as_empty_string() -> None:
     # dumps() always terminates the trailer record, even when empty -- this
     # produces two adjacent "*" markers with nothing between them.
-    header = Header(revision=Revision.ISO_2_0, data_type=7)
+    header = Header(revision=Revision.ISO_2_0, data_type=DataType.BINARY64)
     text = _ascii.dumps(header, np.zeros((1, 1)), trailer="")
     assert text.endswith("*\r\n*\r\n")
     _header, _data, trailer = _ascii.loads(text)
@@ -208,31 +208,31 @@ def test_dumps_loads_roundtrips_empty_trailer_as_empty_string() -> None:
 
 def test_dumps_does_not_insert_blank_line_for_crlf_terminated_trailer() -> None:
     """A trailer that already ends in its own line terminator must not get a doubled one."""
-    header = Header(revision=Revision.ISO_2_0, data_type=7)
+    header = Header(revision=Revision.ISO_2_0, data_type=DataType.BINARY64)
     text = _ascii.dumps(header, np.zeros((1, 1)), trailer="OperatorName = Jane Doe\r\n")
     assert text.endswith("OperatorName = Jane Doe\r\n*\r\n")
 
 
 def test_dumps_v1_trailer_need_not_be_xml() -> None:
-    header = Header(revision=Revision.ISO_1_0, data_type=7)
+    header = Header(revision=Revision.ISO_1_0, data_type=DataType.BINARY64)
     _ascii.dumps(header, np.zeros((1, 1)), trailer="Operator = Jane Doe")
 
 
 def test_dumps_rejects_non_ascii_trailer() -> None:
-    header = Header(data_type=7)
+    header = Header(data_type=DataType.BINARY64)
     with pytest.raises(SdfFormatError, match="must be 7-bit ASCII"):
         _ascii.dumps(header, np.zeros((1, 1)), trailer="Müller café")
 
 
 def test_dumps_rejects_non_ascii_manufacturer_id() -> None:
-    header = Header(data_type=7, manufacturer_id="Müller")
+    header = Header(data_type=DataType.BINARY64, manufacturer_id="Müller")
     with pytest.raises(SdfFormatError, match="manufacturer_id must be 7-bit ASCII"):
         _ascii.dumps(header, np.zeros((1, 1)))
 
 
 def test_loads_returns_non_ascii_trailer_as_is() -> None:
     """A non-compliant trailer must not prevent reading the (already-parsed) depth data."""
-    header = Header(data_type=7)
+    header = Header(data_type=DataType.BINARY64)
     # dumps() itself always terminates the (here, empty) trailer; replace
     # that terminator to simulate a non-compliant trailer added after the fact.
     text = _ascii.dumps(header, np.zeros((1, 1)))
@@ -252,7 +252,7 @@ def test_dumps_roundtrips_loads() -> None:
         x_scale=1e-6,
         y_scale=1e-6,
         z_scale=1e-6,
-        data_type=7,
+        data_type=DataType.BINARY64,
     )
     text = _ascii.dumps(header, data)
     _header, round_tripped_data, _trailer = _ascii.loads(text)
@@ -263,14 +263,14 @@ def test_dumps_roundtrips_loads() -> None:
 
 def test_dumps_roundtrips_integer_data_type() -> None:
     data = np.array([[1e-6, np.nan], [-2e-6, 0.0]])
-    header = Header(z_scale=1e-6, data_type=6)
+    header = Header(z_scale=1e-6, data_type=DataType.INT32)
     text = _ascii.dumps(header, data)
     _header, round_tripped_data, _trailer = _ascii.loads(text)
     np.testing.assert_allclose(round_tripped_data, data, rtol=1e-9, equal_nan=True)
 
 
 def test_dump_writes_to_file_object() -> None:
-    header = Header(data_type=7)
+    header = Header(data_type=DataType.BINARY64)
     fp = io.StringIO()
     _ascii.dump(header, np.zeros((1, 1)), fp)
     assert fp.getvalue().startswith("aISO-2.0")
@@ -280,7 +280,7 @@ def test_dumps_loads_roundtrip_bcr_revision() -> None:
     header = Header(
         revision=Revision.BCR_1_0,
         z_scale=1e-6,
-        data_type=3,
+        data_type=DataType.BINARY32,
     )
     data = np.array([[1e-6, -2e-6]])
     text = _ascii.dumps(header, data)
@@ -295,8 +295,8 @@ def test_dumps_reverses_profile_order_for_bcr_on_disk() -> None:
     # Each row has a distinct value so the on-disk row order is directly
     # observable, independent of the revision-aware unflipping loads() does.
     data = np.array([[0.0], [1.0], [2.0], [3.0]])
-    iso_header = Header(revision=Revision.ISO_1_0, z_scale=1.0, data_type=7)
-    bcr_header = Header(revision=Revision.BCR_1_0, z_scale=1.0, data_type=7)
+    iso_header = Header(revision=Revision.ISO_1_0, z_scale=1.0, data_type=DataType.BINARY64)
+    bcr_header = Header(revision=Revision.BCR_1_0, z_scale=1.0, data_type=DataType.BINARY64)
 
     iso_text = _ascii.dumps(iso_header, data)
     bcr_text = _ascii.dumps(bcr_header, data)
@@ -315,7 +315,7 @@ def test_dumps_reverses_profile_order_for_bcr_on_disk() -> None:
 
 
 def test_dumps_loads_roundtrip_none_dates() -> None:
-    header = Header(data_type=7, create_date=None, mod_date=None)
+    header = Header(data_type=DataType.BINARY64, create_date=None, mod_date=None)
     text = _ascii.dumps(header, np.zeros((1, 1)))
     assert "CreateDate = 000000000000" in text
 
